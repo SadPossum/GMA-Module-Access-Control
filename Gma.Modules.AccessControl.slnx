@@ -1,0 +1,42 @@
+<Solution>
+  <Folder Name="/docs/">
+    <File Path="docs/README.md" />
+  </Folder>
+  <Folder Name="/eng/">
+    <File Path="eng/bootstrap-source-roots.ps1" />
+  </Folder>
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/validate.yml" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="Gma.SourceRoots.props.example" />
+    <File Path="LICENSE" />
+    <File Path="nuget.config" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/Admin/">
+    <Project Path="src/Gma.Modules.AccessControl.Admin.Contracts/Gma.Modules.AccessControl.Admin.Contracts.csproj" />
+    <Project Path="src/Gma.Modules.AccessControl.AdminApi/Gma.Modules.AccessControl.AdminApi.csproj" />
+    <Project Path="src/Gma.Modules.AccessControl.AdminCli/Gma.Modules.AccessControl.AdminCli.csproj" />
+  </Folder>
+  <Folder Name="/src/Application/">
+    <Project Path="src/Gma.Modules.AccessControl.Application/Gma.Modules.AccessControl.Application.csproj" />
+  </Folder>
+  <Folder Name="/src/Contracts/">
+    <Project Path="src/Gma.Modules.AccessControl.Contracts/Gma.Modules.AccessControl.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Persistence/">
+    <Project Path="src/Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations/Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.csproj" />
+    <Project Path="src/Gma.Modules.AccessControl.Persistence.SqlServerMigrations/Gma.Modules.AccessControl.Persistence.SqlServerMigrations.csproj" />
+    <Project Path="src/Gma.Modules.AccessControl.Persistence/Gma.Modules.AccessControl.Persistence.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Gma.Modules.AccessControl.Tests/Gma.Modules.AccessControl.Tests.csproj" />
+  </Folder>
+</Solution>

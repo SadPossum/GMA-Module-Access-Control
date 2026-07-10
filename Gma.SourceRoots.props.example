@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <GmaFrameworkRoot>$(MSBuildThisFileDirectory)..\gma-framework\src\</GmaFrameworkRoot>
+    <GmaModulesRoot>$(MSBuildThisFileDirectory)..\</GmaModulesRoot>
+    <GmaModuleAccessControlRoot>$(MSBuildThisFileDirectory)src\</GmaModuleAccessControlRoot>
+  </PropertyGroup>
+</Project>

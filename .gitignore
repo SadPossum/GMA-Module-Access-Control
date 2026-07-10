@@ -1,0 +1,14 @@
+# Local source-root bootstrap.
+Gma.SourceRoots.props
+
+# Build outputs.
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+# Local IDE and agent state.
+.vs/
+.agents/
+.codex/
+*.user
+*.suo
