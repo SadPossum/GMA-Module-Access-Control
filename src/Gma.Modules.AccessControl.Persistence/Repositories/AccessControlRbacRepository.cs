@@ -7,6 +7,7 @@ using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 internal sealed class AccessControlRbacRepository(AccessControlDbContext dbContext, IIdGenerator idGenerator)
     : IAccessControlRbacRepository
@@ -18,6 +19,71 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
 
     public Task<bool> HasAnyAssignmentsAsync(CancellationToken cancellationToken) =>
         dbContext.SubjectRoleAssignments.AnyAsync(cancellationToken);
+
+    public async Task<bool> TryBootstrapOwnerAsync(
+        AccessSubject subject,
+        string roleName,
+        DateTimeOffset createdAtUtc,
+        bool allowWhenAssignmentsExist,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        string normalizedRoleName = AccessControlRoleName.Normalize(roleName);
+
+        if (!dbContext.Database.IsRelational())
+        {
+            if (!allowWhenAssignmentsExist && await this.HasAnyAssignmentsAsync(cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            await this.EnsureSubjectAsync(subject, createdAtUtc, cancellationToken).ConfigureAwait(false);
+            await this.EnsureRoleAsync(normalizedRoleName, createdAtUtc, cancellationToken).ConfigureAwait(false);
+            await this.EnsureRolePermissionAsync(normalizedRoleName, AccessControlPermissionGrant.OwnerWildcard, createdAtUtc, cancellationToken).ConfigureAwait(false);
+            await this.EnsureRoleAssignmentAsync(subject, normalizedRoleName, AccessScope.Global, createdAtUtc, cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!allowWhenAssignmentsExist)
+        {
+            int claimed = await dbContext.BootstrapState
+                .Where(state => state.Id == AccessBootstrapState.SingletonId && state.ClaimedBy == null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(state => state.ClaimedBy, subject.Id)
+                    .SetProperty(state => state.ClaimedAtUtc, createdAtUtc), cancellationToken)
+                .ConfigureAwait(false);
+            if (claimed == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        await this.EnsureSubjectAsync(subject, createdAtUtc, cancellationToken).ConfigureAwait(false);
+        await this.EnsureRoleAsync(normalizedRoleName, createdAtUtc, cancellationToken).ConfigureAwait(false);
+        await this.EnsureRolePermissionAsync(
+                normalizedRoleName,
+                AccessControlPermissionGrant.OwnerWildcard,
+                createdAtUtc,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await this.EnsureRoleAssignmentAsync(
+                subject,
+                normalizedRoleName,
+                AccessScope.Global,
+                createdAtUtc,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 
     public Task<bool> RoleExistsAsync(string roleName, CancellationToken cancellationToken)
     {

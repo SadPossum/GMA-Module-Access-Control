@@ -6,6 +6,12 @@ using Gma.Framework.Permissions;
 public interface IAccessControlRbacRepository
 {
     Task<bool> HasAnyAssignmentsAsync(CancellationToken cancellationToken);
+    Task<bool> TryBootstrapOwnerAsync(
+        AccessSubject subject,
+        string roleName,
+        DateTimeOffset createdAtUtc,
+        bool allowWhenAssignmentsExist,
+        CancellationToken cancellationToken);
     Task<bool> RoleExistsAsync(string roleName, CancellationToken cancellationToken);
     Task<bool> RoleHasPermissionAsync(string roleName, string permissionCode, CancellationToken cancellationToken);
     Task<bool> AssignmentExistsAsync(AccessSubject subject, string roleName, AccessScope scope, CancellationToken cancellationToken);

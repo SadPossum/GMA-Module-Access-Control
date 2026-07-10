@@ -9,6 +9,7 @@ public sealed class AccessControlDbContext(DbContextOptions<AccessControlDbConte
     public DbSet<AccessRole> Roles => this.Set<AccessRole>();
     public DbSet<AccessRolePermission> RolePermissions => this.Set<AccessRolePermission>();
     public DbSet<AccessSubjectRoleAssignment> SubjectRoleAssignments => this.Set<AccessSubjectRoleAssignment>();
+    internal DbSet<AccessBootstrapState> BootstrapState => this.Set<AccessBootstrapState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -53,7 +53,7 @@ admin roles assign --actor <id> --target-actor <id> --role <role> [--scope <scop
 admin roles list --actor <id> [--output table|json]
 ```
 
-`bootstrap` creates the first owner principal and succeeds only when there are no existing assignments unless configuration explicitly allows bootstrap over existing assignments.
+`bootstrap` creates the first owner principal and succeeds only when there are no existing assignments unless configuration explicitly allows bootstrap over existing assignments. The persisted implementation reserves bootstrap through a provider-backed singleton gate inside the same transaction as role/assignment creation, so concurrent first-owner attempts cannot both succeed.
 
 ## Admin API
 
@@ -81,7 +81,7 @@ Bootstrap remains CLI-only.
 }
 ```
 
-`BootstrapOwnerCommand` creates the initial owner role and global owner assignment only when confirmed and when no assignments exist, unless `AllowWhenAssignmentsExist` is explicitly enabled.
+`BootstrapOwnerCommand` creates the initial owner role and global owner assignment only when confirmed and when no assignments exist, unless `AllowWhenAssignmentsExist` is explicitly enabled. SQL Server and PostgreSQL migrations create the bootstrap gate; apply them before using the command.
 
 ## Scope Model
 

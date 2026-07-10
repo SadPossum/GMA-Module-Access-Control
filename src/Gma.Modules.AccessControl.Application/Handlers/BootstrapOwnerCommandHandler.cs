@@ -26,24 +26,22 @@ internal sealed class BootstrapOwnerCommandHandler(
             return Result.Failure<Unit>(AccessControlApplicationErrors.SubjectInvalid);
         }
 
-        bool hasAssignments = await repository.HasAnyAssignmentsAsync(cancellationToken).ConfigureAwait(false);
-        if (hasAssignments && !options.Value.Bootstrap.AllowWhenAssignmentsExist)
-        {
-            return Result.Failure<Unit>(AccessControlApplicationErrors.BootstrapNotAllowed);
-        }
-
         if (!AccessControlRoleName.TryNormalize(options.Value.Bootstrap.OwnerRoleName, out string? roleName))
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.RoleNameInvalid);
         }
 
-        DateTimeOffset now = clock.UtcNow;
-        await repository.EnsureSubjectAsync(subject, now, cancellationToken).ConfigureAwait(false);
-        await repository.EnsureRoleAsync(roleName, now, cancellationToken).ConfigureAwait(false);
-        await repository.EnsureRolePermissionAsync(roleName, AccessControlPermissionGrant.OwnerWildcard, now, cancellationToken)
+        bool bootstrapped = await repository.TryBootstrapOwnerAsync(
+                subject,
+                roleName,
+                clock.UtcNow,
+                options.Value.Bootstrap.AllowWhenAssignmentsExist,
+                cancellationToken)
             .ConfigureAwait(false);
-        await repository.EnsureRoleAssignmentAsync(subject, roleName, AccessScope.Global, now, cancellationToken)
-            .ConfigureAwait(false);
+        if (!bootstrapped)
+        {
+            return Result.Failure<Unit>(AccessControlApplicationErrors.BootstrapNotAllowed);
+        }
 
         return Result.Success(Unit.Value);
     }
