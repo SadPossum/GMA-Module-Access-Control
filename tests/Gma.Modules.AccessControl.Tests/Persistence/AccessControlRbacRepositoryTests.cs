@@ -4,6 +4,7 @@ using Gma.Framework.AccessControl;
 using Gma.Framework.Permissions;
 using Gma.Framework.Runtime.Identity;
 using Gma.Modules.AccessControl.Application;
+using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Entities;
 using Gma.Modules.AccessControl.Persistence.Repositories;
@@ -114,6 +115,71 @@ public sealed class AccessControlRbacRepositoryTests
     }
 
     [Fact]
+    public async Task Descriptor_enabled_concrete_permission_grant_authorizes_descendants_but_not_other_tenants()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        PermissionCode permission = PermissionCode.Create("properties.rooms.manage");
+        AccessControlRbacRepository repository = CreateRepository(
+            dbContext,
+            (permission.Value, new AccessScopeMatchOptions(AllowAncestorScopeGrants: true)));
+        AccessSubject subject = AccessSubject.User("user-a");
+        AccessScope tenantScope = AccessScope.Parse("tenant:tenant-a");
+        AccessScope propertyScope = AccessScope.Parse("tenant:tenant-a/property:property-a");
+
+        await repository.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("property-manager", Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("property-manager", permission.Value, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(subject, "property-manager", tenantScope, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        bool propertyAllowed = await repository.HasPermissionAsync(subject, permission, propertyScope, CancellationToken.None);
+        bool otherTenantDenied = await repository.HasPermissionAsync(
+            subject,
+            permission,
+            AccessScope.Parse("tenant:tenant-b/property:property-a"),
+            CancellationToken.None);
+        AccessGrantScope grant = Assert.Single(await repository.ListGrantedScopesAsync(
+            subject,
+            permission,
+            CancellationToken.None));
+
+        Assert.True(propertyAllowed);
+        Assert.False(otherTenantDenied);
+        Assert.True(grant.Grants(propertyScope));
+        Assert.False(grant.Grants(AccessScope.Parse("tenant:tenant-b/property:property-a")));
+    }
+
+    [Fact]
+    public async Task Descriptor_enabled_global_concrete_permission_grant_authorizes_descendants_consistently()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        PermissionCode permission = PermissionCode.Create("properties.portfolio.read");
+        AccessControlRbacRepository repository = CreateRepository(
+            dbContext,
+            (permission.Value, new AccessScopeMatchOptions(
+                AllowAncestorScopeGrants: true,
+                AllowGlobalScopeGrant: true)));
+        AccessSubject subject = AccessSubject.User("portfolio-user");
+        AccessScope propertyScope = AccessScope.Parse("tenant:tenant-a/property:property-a");
+
+        await repository.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("portfolio-reader", Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("portfolio-reader", permission.Value, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(subject, "portfolio-reader", AccessScope.Global, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        bool allowed = await repository.HasPermissionAsync(subject, permission, propertyScope, CancellationToken.None);
+        AccessGrantScope grant = Assert.Single(await repository.ListGrantedScopesAsync(
+            subject,
+            permission,
+            CancellationToken.None));
+
+        Assert.True(allowed);
+        Assert.True(grant.Grants(propertyScope));
+        Assert.True(grant.MatchOptions.AllowGlobalScopeGrant);
+    }
+
+    [Fact]
     public async Task Owner_wildcard_ancestor_scope_authorizes_descendant_request()
     {
         await using AccessControlDbContext dbContext = CreateDbContext();
@@ -174,6 +240,143 @@ public sealed class AccessControlRbacRepositoryTests
         Assert.Equal("operators", role.Name);
         Assert.Equal(["auth.members.disable", "auth.members.read"], role.Permissions);
         Assert.Equal(1, role.AssignmentCount);
+    }
+
+    [Fact]
+    public async Task List_role_assignments_preserves_subject_kind_identity_for_same_subject_id()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject user = AccessSubject.User("member-a");
+        AccessSubject admin = AccessSubject.AdminActor("member-a");
+
+        await repository.EnsureSubjectAsync(user, Now, CancellationToken.None);
+        await repository.EnsureSubjectAsync(admin, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("property-reader", Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(user, "property-reader", AccessScope.Parse("tenant:tenant-a"), Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(admin, "property-reader", AccessScope.Global, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        IReadOnlyList<AccessControlRoleAssignmentDetails> assignments = await repository
+            .ListRoleAssignmentsAsync("property-reader", CancellationToken.None);
+
+        Assert.Equal(2, assignments.Count);
+        Assert.Contains(assignments, assignment => assignment.SubjectKind == AccessSubjectKind.User && assignment.SubjectId == "member-a");
+        Assert.Contains(assignments, assignment => assignment.SubjectKind == AccessSubjectKind.AdminActor && assignment.SubjectId == "member-a");
+    }
+
+    [Fact]
+    public async Task Revoke_permission_takes_effect_immediately_and_reports_missing_grant()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject subject = AccessSubject.User("user-a");
+        PermissionCode permission = PermissionCode.Create("properties.read");
+        AccessScope scope = AccessScope.Parse("tenant:tenant-a");
+
+        await repository.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("property-reader", Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("property-reader", permission.Value, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(subject, "property-reader", scope, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(await repository.HasPermissionAsync(subject, permission, scope, CancellationToken.None));
+        Assert.Equal(
+            AccessControlRemovalOutcome.Removed,
+            await repository.RevokeRolePermissionAsync("property-reader", permission.Value, CancellationToken.None));
+        Assert.False(await repository.HasPermissionAsync(subject, permission, scope, CancellationToken.None));
+        Assert.Equal(
+            AccessControlRemovalOutcome.NotFound,
+            await repository.RevokeRolePermissionAsync("property-reader", permission.Value, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Unassign_role_removes_only_the_exact_subject_kind_and_scope()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject user = AccessSubject.User("member-a");
+        AccessSubject admin = AccessSubject.AdminActor("member-a");
+        PermissionCode permission = PermissionCode.Create("properties.read");
+        AccessScope tenantA = AccessScope.Parse("tenant:tenant-a");
+        AccessScope tenantB = AccessScope.Parse("tenant:tenant-b");
+
+        await repository.EnsureSubjectAsync(user, Now, CancellationToken.None);
+        await repository.EnsureSubjectAsync(admin, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("property-reader", Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("property-reader", permission.Value, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(user, "property-reader", tenantA, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(user, "property-reader", tenantB, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(admin, "property-reader", tenantA, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(
+            AccessControlRemovalOutcome.Removed,
+            await repository.UnassignRoleAsync(user, "property-reader", tenantA, CancellationToken.None));
+
+        IReadOnlyList<AccessControlRoleAssignmentDetails> assignments = await repository
+            .ListRoleAssignmentsAsync("property-reader", CancellationToken.None);
+        Assert.DoesNotContain(assignments, assignment =>
+            assignment.SubjectKind == AccessSubjectKind.User && assignment.AccessScope.Equals(tenantA));
+        Assert.Contains(assignments, assignment =>
+            assignment.SubjectKind == AccessSubjectKind.User && assignment.AccessScope.Equals(tenantB));
+        Assert.Contains(assignments, assignment =>
+            assignment.SubjectKind == AccessSubjectKind.AdminActor && assignment.AccessScope.Equals(tenantA));
+        Assert.Equal(
+            AccessControlRemovalOutcome.NotFound,
+            await repository.UnassignRoleAsync(user, "property-reader", tenantA, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Final_global_admin_owner_is_protected_from_unassignment_and_wildcard_revocation()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject owner = AccessSubject.AdminActor("owner-a");
+        AccessSubject userWithWildcard = AccessSubject.User("user-a");
+
+        await repository.EnsureSubjectAsync(owner, Now, CancellationToken.None);
+        await repository.EnsureSubjectAsync(userWithWildcard, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("owner", Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("user-owner", Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("owner", AccessControlPermissionGrant.OwnerWildcard, Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("user-owner", AccessControlPermissionGrant.OwnerWildcard, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(owner, "owner", AccessScope.Global, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(userWithWildcard, "user-owner", AccessScope.Global, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(
+            AccessControlRemovalOutcome.LastOwnerProtected,
+            await repository.UnassignRoleAsync(owner, "owner", AccessScope.Global, CancellationToken.None));
+        Assert.Equal(
+            AccessControlRemovalOutcome.LastOwnerProtected,
+            await repository.RevokeRolePermissionAsync("owner", AccessControlPermissionGrant.OwnerWildcard, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task One_global_admin_owner_can_be_removed_when_another_remains()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject ownerA = AccessSubject.AdminActor("owner-a");
+        AccessSubject ownerB = AccessSubject.AdminActor("owner-b");
+
+        await repository.EnsureSubjectAsync(ownerA, Now, CancellationToken.None);
+        await repository.EnsureSubjectAsync(ownerB, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("owner-a", Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("owner-b", Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("owner-a", AccessControlPermissionGrant.OwnerWildcard, Now, CancellationToken.None);
+        await repository.EnsureRolePermissionAsync("owner-b", AccessControlPermissionGrant.OwnerWildcard, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(ownerA, "owner-a", AccessScope.Global, Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(ownerB, "owner-b", AccessScope.Global, Now, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(
+            AccessControlRemovalOutcome.Removed,
+            await repository.UnassignRoleAsync(ownerA, "owner-a", AccessScope.Global, CancellationToken.None));
+        Assert.Equal(
+            AccessControlRemovalOutcome.LastOwnerProtected,
+            await repository.RevokeRolePermissionAsync("owner-b", AccessControlPermissionGrant.OwnerWildcard, CancellationToken.None));
     }
 
     [Fact]
@@ -305,8 +508,23 @@ public sealed class AccessControlRbacRepositoryTests
         return new AccessControlDbContext(options);
     }
 
-    private static AccessControlRbacRepository CreateRepository(AccessControlDbContext dbContext) =>
-        new(dbContext, new SequenceIdGenerator());
+    private static AccessControlRbacRepository CreateRepository(
+        AccessControlDbContext dbContext,
+        params (string Permission, AccessScopeMatchOptions Options)[] configuredPermissions) =>
+        new(dbContext, new SequenceIdGenerator(), new TestScopeMatchOptionsResolver(configuredPermissions));
+
+    private sealed class TestScopeMatchOptionsResolver(
+        IEnumerable<(string Permission, AccessScopeMatchOptions Options)> configuredPermissions)
+        : IAccessScopeMatchOptionsResolver
+    {
+        private readonly Dictionary<string, AccessScopeMatchOptions> optionsByPermission = configuredPermissions
+            .ToDictionary(item => item.Permission, item => item.Options, StringComparer.Ordinal);
+
+        public AccessScopeMatchOptions Resolve(PermissionCode permission) =>
+            this.optionsByPermission.TryGetValue(permission.Value, out AccessScopeMatchOptions? options)
+                ? options
+                : new AccessScopeMatchOptions();
+    }
 
     private sealed class SequenceIdGenerator : IIdGenerator
     {

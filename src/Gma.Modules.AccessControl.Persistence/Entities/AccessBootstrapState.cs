@@ -9,4 +9,5 @@ internal sealed class AccessBootstrapState
     public int Id { get; private set; } = SingletonId;
     public string? ClaimedBy { get; private set; }
     public DateTimeOffset? ClaimedAtUtc { get; private set; }
+    public long ManagementRevision { get; private set; }
 }

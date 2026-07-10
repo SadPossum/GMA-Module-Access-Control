@@ -36,11 +36,14 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
     public void MapCommands(IAdminCliCommandRegistry commands)
     {
         AdminCliGlobalOptions globalOptions = commands.Services.GetRequiredService<AdminCliGlobalOptions>();
-        Command roles = new("roles", "Manage admin roles.")
+        Command roles = new("roles", "Manage access-control roles.")
         {
             CreateRoleCreateCommand(commands.Services),
             CreateRoleGrantCommand(commands.Services),
+            CreateRoleRevokeCommand(commands.Services),
             CreateRoleAssignCommand(commands.Services),
+            CreateRoleUnassignCommand(commands.Services),
+            CreateRoleAssignmentsCommand(commands.Services, globalOptions),
             CreateRoleListCommand(commands.Services, globalOptions)
         };
         Command admin = new(AccessControlModuleMetadata.AdminSurfaceName, "Access-control administration operations.")
@@ -117,7 +120,7 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
             Description = "Role name.",
             Required = true
         };
-        Command command = new("create", "Create an admin role.")
+        Command command = new("create", "Create an access-control role.")
         {
             nameOption
         };
@@ -198,11 +201,64 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
         return command;
     }
 
+    private static Command CreateRoleRevokeCommand(IServiceProvider services)
+    {
+        Option<string> roleOption = new("--role")
+        {
+            Description = "Role name.",
+            Required = true
+        };
+        Option<string> permissionOption = new("--permission")
+        {
+            Description = "Permission code to revoke.",
+            Required = true
+        };
+        Command command = new("revoke", "Revoke a permission from a role.")
+        {
+            roleOption,
+            permissionOption
+        };
+        command.SetAction((parseResult, cancellationToken) =>
+        {
+            AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
+
+            return executor.ExecuteAsync(
+                parseResult,
+                AdminOperation.Create(AccessControlAdminOperationNames.RolesRevoke, AccessControlAdminPermissions.RolesManage),
+                null,
+                requireTenant: false,
+                async (provider, token) =>
+                {
+                    IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
+                    Result<Unit> result = await dispatcher.SendAsync(
+                        new RevokeRolePermissionCommand(
+                            parseResult.GetRequiredValue(roleOption),
+                            parseResult.GetRequiredValue(permissionOption)),
+                        token).ConfigureAwait(false);
+
+                    if (result.IsSuccess)
+                    {
+                        AdminCliOutput.WriteMessage("Permission revoked.");
+                    }
+
+                    return result;
+                },
+                cancellationToken);
+        });
+
+        return command;
+    }
+
     private static Command CreateRoleAssignCommand(IServiceProvider services)
     {
-        Option<string> targetActorOption = new("--target-actor")
+        Option<string> targetKindOption = new("--target-kind")
         {
-            Description = "Principal that receives the role.",
+            Description = "Subject kind: user, admin-actor, service, or system.",
+            DefaultValueFactory = _ => AccessSubjectKindNames.AdminActor
+        };
+        Option<string> targetIdOption = new("--target-id", "--target-actor")
+        {
+            Description = "Subject id that receives the role. --target-actor remains a compatibility alias.",
             Required = true
         };
         Option<string> roleOption = new("--role")
@@ -214,9 +270,10 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
         {
             Description = "Access scope for the assignment, such as 'global' or 'tenant:tenant-a'. Omit for global."
         };
-        Command command = new("assign", "Assign a role to an admin principal.")
+        Command command = new("assign", "Assign a role to an access subject.")
         {
-            targetActorOption,
+            targetKindOption,
+            targetIdOption,
             roleOption,
             scopeOption
         };
@@ -232,6 +289,13 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                 requireTenant: false,
                 async (provider, token) =>
                 {
+                    if (!AccessSubjectKindNames.TryParse(
+                            parseResult.GetRequiredValue(targetKindOption),
+                            out AccessSubjectKind subjectKind))
+                    {
+                        return Result.Failure<Unit>(AccessControlApplicationErrors.SubjectInvalid);
+                    }
+
                     if (!TryParseScope(scope, out AccessScope? accessScope))
                     {
                         return Result.Failure<Unit>(AccessControlApplicationErrors.ScopeInvalid);
@@ -240,7 +304,8 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                     IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
                     Result<Unit> result = await dispatcher.SendAsync(
                         new AssignRoleCommand(
-                            parseResult.GetRequiredValue(targetActorOption),
+                            subjectKind,
+                            parseResult.GetRequiredValue(targetIdOption),
                             parseResult.GetRequiredValue(roleOption),
                             accessScope),
                         token).ConfigureAwait(false);
@@ -248,6 +313,80 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                     if (result.IsSuccess)
                     {
                         AdminCliOutput.WriteMessage("Role assigned.");
+                    }
+
+                    return result;
+                },
+                cancellationToken);
+        });
+
+        return command;
+    }
+
+    private static Command CreateRoleUnassignCommand(IServiceProvider services)
+    {
+        Option<string> targetKindOption = new("--target-kind")
+        {
+            Description = "Subject kind: user, admin-actor, service, or system.",
+            DefaultValueFactory = _ => AccessSubjectKindNames.AdminActor
+        };
+        Option<string> targetIdOption = new("--target-id", "--target-actor")
+        {
+            Description = "Subject id that loses the role. --target-actor remains a compatibility alias.",
+            Required = true
+        };
+        Option<string> roleOption = new("--role")
+        {
+            Description = "Role name.",
+            Required = true
+        };
+        Option<string?> scopeOption = new("--scope")
+        {
+            Description = "Exact access scope of the assignment. Omit for global."
+        };
+        Command command = new("unassign", "Remove an exact role assignment from an access subject.")
+        {
+            targetKindOption,
+            targetIdOption,
+            roleOption,
+            scopeOption
+        };
+        command.SetAction((parseResult, cancellationToken) =>
+        {
+            AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
+            string? scope = parseResult.GetValue(scopeOption);
+
+            return executor.ExecuteAsync(
+                parseResult,
+                AdminOperation.Create(AccessControlAdminOperationNames.RolesUnassign, AccessControlAdminPermissions.RolesManage),
+                null,
+                requireTenant: false,
+                async (provider, token) =>
+                {
+                    if (!AccessSubjectKindNames.TryParse(
+                            parseResult.GetRequiredValue(targetKindOption),
+                            out AccessSubjectKind subjectKind))
+                    {
+                        return Result.Failure<Unit>(AccessControlApplicationErrors.SubjectInvalid);
+                    }
+
+                    if (!TryParseScope(scope, out AccessScope? accessScope))
+                    {
+                        return Result.Failure<Unit>(AccessControlApplicationErrors.ScopeInvalid);
+                    }
+
+                    IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
+                    Result<Unit> result = await dispatcher.SendAsync(
+                        new UnassignRoleCommand(
+                            subjectKind,
+                            parseResult.GetRequiredValue(targetIdOption),
+                            parseResult.GetRequiredValue(roleOption),
+                            accessScope),
+                        token).ConfigureAwait(false);
+
+                    if (result.IsSuccess)
+                    {
+                        AdminCliOutput.WriteMessage("Role unassigned.");
                     }
 
                     return result;
@@ -276,9 +415,60 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
         return false;
     }
 
+    private static Command CreateRoleAssignmentsCommand(
+        IServiceProvider services,
+        AdminCliGlobalOptions globalOptions)
+    {
+        Option<string> roleOption = new("--role")
+        {
+            Description = "Role name.",
+            Required = true
+        };
+        Command command = new("assignments", "List assignments for a role.")
+        {
+            roleOption
+        };
+        command.SetAction((parseResult, cancellationToken) =>
+        {
+            AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
+
+            return executor.ExecuteAsync(
+                parseResult,
+                AdminOperation.Create(AccessControlAdminOperationNames.RoleAssignmentsList, AccessControlAdminPermissions.RolesRead),
+                null,
+                requireTenant: false,
+                async (provider, token) =>
+                {
+                    IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
+                    Result<IReadOnlyList<AccessControlRoleAssignmentDetails>> result = await dispatcher
+                        .QueryAsync(new ListRoleAssignmentsQuery(parseResult.GetRequiredValue(roleOption)), token)
+                        .ConfigureAwait(false);
+
+                    if (result.IsSuccess)
+                    {
+                        AdminCliOutput.WriteRows(
+                            result.Value,
+                            parseResult.GetValue(globalOptions.OutputOption) ?? AdminCliOutput.Table,
+                            [
+                                ("Subject kind", assignment => AccessSubjectKindNames.GetName(assignment.SubjectKind)),
+                                ("Subject id", assignment => assignment.SubjectId),
+                                ("Role", assignment => assignment.RoleName),
+                                ("Scope", assignment => assignment.AccessScope.Value),
+                                ("Created (UTC)", assignment => assignment.CreatedAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture))
+                            ]);
+                    }
+
+                    return result;
+                },
+                cancellationToken);
+        });
+
+        return command;
+    }
+
     private static Command CreateRoleListCommand(IServiceProvider services, AdminCliGlobalOptions globalOptions)
     {
-        Command command = new("list", "List admin roles.");
+        Command command = new("list", "List access-control roles.");
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();

@@ -12,7 +12,7 @@ internal sealed class AssignRoleCommandHandler(IAccessControlRbacRepository repo
 {
     public async Task<Result<Unit>> HandleAsync(AssignRoleCommand command, CancellationToken cancellationToken)
     {
-        if (!AccessSubject.TryCreate(AccessSubjectKind.AdminActor, command.ActorId, out AccessSubject? subject))
+        if (!AccessSubject.TryCreate(command.SubjectKind, command.SubjectId, out AccessSubject? subject))
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.SubjectInvalid);
         }

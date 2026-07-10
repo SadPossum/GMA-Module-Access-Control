@@ -2,6 +2,7 @@ namespace Gma.Modules.AccessControl.Application;
 
 using Gma.Framework.AccessControl;
 using Gma.Framework.Application.Composition;
+using Gma.Modules.AccessControl.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -26,7 +27,7 @@ public static class DependencyInjection
                 ServiceDescriptor.Singleton<IValidateOptions<AccessControlOptions>, AccessControlOptionsValidator>());
         }
 
-        services.AddGmaAccessControl();
+        services.AddGmaAccessControlPermissionPolicies(AccessControlModuleMetadata.Descriptor);
         services.TryAddScoped<PersistedAccessControlDecisionProvider>();
         services.TryAddScoped<IAccessGrantScopeReader, PersistedAccessGrantScopeReader>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IAccessDecisionProvider, PersistedAccessControlDecisionProvider>());

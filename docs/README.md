@@ -49,9 +49,18 @@ AccessControl owns the compatibility `admin` command group:
 admin bootstrap --actor <id> --yes
 admin roles create --actor <id> --name <role>
 admin roles grant --actor <id> --role <role> --permission <code>
-admin roles assign --actor <id> --target-actor <id> --role <role> [--scope <scope>]
+admin roles revoke --actor <id> --role <role> --permission <code>
+admin roles assign --actor <id> --target-kind <kind> --target-id <id> --role <role> [--scope <scope>]
+admin roles unassign --actor <id> --target-kind <kind> --target-id <id> --role <role> [--scope <scope>]
+admin roles assignments --actor <id> --role <role> [--output table|json]
 admin roles list --actor <id> [--output table|json]
 ```
+
+Supported target kinds are `user`, `admin-actor`, `service`, and `system`. `--target-actor` remains a compatibility alias for `--target-id`, with `admin-actor` as the CLI default. Subject kind is part of identity: `user/member-a` and `admin-actor/member-a` are distinct principals.
+
+Existing assignment API clients may continue sending `actorId`; it is treated strictly as an `admin-actor` identity. New clients should send explicit `subjectKind` and `subjectId`, which are required for every non-admin subject.
+
+Revocation and unassignment take effect immediately. The final global `admin-actor` owner wildcard assignment is protected from both unassignment and wildcard revocation so an operator cannot permanently lock every administration surface.
 
 `bootstrap` creates the first owner principal and succeeds only when there are no existing assignments unless configuration explicitly allows bootstrap over existing assignments. The persisted implementation reserves bootstrap through a provider-backed singleton gate inside the same transaction as role/assignment creation, so concurrent first-owner attempts cannot both succeed.
 
@@ -63,7 +72,10 @@ AccessControl owns the compatibility role routes:
 GET  /api/admin/roles
 POST /api/admin/roles
 POST /api/admin/roles/{roleName}/permissions
+DELETE /api/admin/roles/{roleName}/permissions/{permissionCode}
 POST /api/admin/roles/{roleName}/assignments
+GET  /api/admin/roles/{roleName}/assignments
+DELETE /api/admin/roles/{roleName}/assignments?subjectKind=<kind>&subjectId=<id>&scope=<scope>
 ```
 
 Bootstrap remains CLI-only.
@@ -97,9 +109,25 @@ Scopes are normalized framework values such as:
 - `tenant:tenant-a`
 - `tenant:tenant-a/property:property-1`
 
-The persisted provider keeps concrete permission grants exact-scope by default. A role granted `catalog.items.read` at `tenant:tenant-a` does not automatically inherit into `tenant:tenant-a/property:property-1`, and a global concrete grant does not automatically authorize tenant scopes. The bootstrap owner wildcard is the compatibility escape hatch that may use global and ancestor scope matching.
+The persisted provider keeps concrete permission grants exact-scope by default. A role granted `catalog.items.read` at `tenant:tenant-a` does not automatically inherit into `tenant:tenant-a/property:property-1`, and a global concrete grant does not automatically authorize tenant scopes. The bootstrap owner wildcard remains the compatibility escape hatch that uses global and ancestor scope matching.
 
-Product modules still own the meaning of `property`, `region`, `department`, or any other resource segment. Descriptor-driven scope inheritance can be added later when a real product module needs per-permission inheritance semantics.
+Product modules still own the meaning of `property`, `region`, `department`, or any other resource segment. A permission may explicitly opt into descendant-scope inheritance in its descriptor:
+
+```csharp
+new ModulePermissionDescriptor(
+    "properties.read",
+    "Read visible properties.",
+    PermissionScopeRequirement.Scoped,
+    PermissionScopeGrantPolicy.Descendants)
+```
+
+The product module registers those policies explicitly during composition:
+
+```csharp
+builder.Services.AddGmaAccessControlPermissionPolicies(PropertiesModuleMetadata.Descriptor);
+```
+
+Registration is explicit and idempotent. Unregistered permissions remain exact-scope, and conflicting policies for the same permission code fail during service registration. `PermissionScopeGrantPolicy.Descendants` lets a tenant assignment cover matching property descendants but does not make a global assignment universal; global inheritance is a separate explicit policy.
 
 For list/detail filtering, the intended split is:
 
@@ -113,7 +141,7 @@ Owning module
   -> module-owned SQL predicate
 ```
 
-Concrete permission grants are exact scope grants. The bootstrap owner wildcard can produce grants with global/ancestor matching options, so callers should use `AccessGrantScope.Grants(...)` when checking a requested scope in memory or translate the same broad-scope semantics deliberately in their own persistence layer.
+Point authorization and `IAccessGrantScopeReader` resolve the same descriptor policy. Callers should use `AccessGrantScope.Grants(...)` when checking a requested scope in memory or translate the same exact/ancestor/global semantics deliberately in their own persistence layer.
 
 ## Boundaries
 

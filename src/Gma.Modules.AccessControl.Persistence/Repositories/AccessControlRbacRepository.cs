@@ -9,10 +9,12 @@ using Gma.Modules.AccessControl.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
 
-internal sealed class AccessControlRbacRepository(AccessControlDbContext dbContext, IIdGenerator idGenerator)
+internal sealed class AccessControlRbacRepository(
+    AccessControlDbContext dbContext,
+    IIdGenerator idGenerator,
+    IAccessScopeMatchOptionsResolver scopeMatchOptionsResolver)
     : IAccessControlRbacRepository
 {
-    private static readonly AccessScopeMatchOptions ExactScopeMatchOptions = new();
     private static readonly AccessScopeMatchOptions OwnerWildcardScopeMatchOptions = new(
         AllowAncestorScopeGrants: true,
         AllowGlobalScopeGrant: true);
@@ -156,6 +158,7 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
         ArgumentNullException.ThrowIfNull(permission);
         ArgumentNullException.ThrowIfNull(scope);
 
+        AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(permission);
         string[] candidateScopeValues = GetCandidateScopeValues(scope);
         PersistedPermissionGrant[] candidateGrants = await this.QuerySubjectPermissionGrants(
                 subject,
@@ -173,7 +176,7 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
             }
 
             if (grant.PermissionCode == permission.Value &&
-                AccessScopeMatcher.GrantSatisfiesRequest(grant.Scope, scope, ExactScopeMatchOptions))
+                AccessScopeMatcher.GrantSatisfiesRequest(grant.Scope, scope, permissionMatchOptions))
             {
                 return true;
             }
@@ -190,6 +193,7 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
         ArgumentNullException.ThrowIfNull(subject);
         ArgumentNullException.ThrowIfNull(permission);
 
+        AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(permission);
         PersistedPermissionGrant[] grants = await this.QuerySubjectPermissionGrants(
                 subject,
                 permission,
@@ -198,7 +202,7 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
             .ConfigureAwait(false);
 
         return grants
-            .Select(ToAccessGrantScope)
+            .Select(grant => ToAccessGrantScope(grant, permissionMatchOptions))
             .Distinct()
             .OrderBy(grant => grant.Scope.Value, StringComparer.Ordinal)
             .ThenBy(grant => grant.MatchOptions.AllowGlobalScopeGrant)
@@ -311,6 +315,34 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
             createdAtUtc));
     }
 
+    public Task<AccessControlRemovalOutcome> RevokeRolePermissionAsync(
+        string roleName,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        string normalizedRoleName = AccessRole.NormalizeName(roleName);
+        string normalizedPermission = AccessControlPermissionGrant.Normalize(permissionCode);
+
+        return this.ExecuteRemovalAsync(
+            token => this.RevokeRolePermissionCoreAsync(normalizedRoleName, normalizedPermission, token),
+            cancellationToken);
+    }
+
+    public Task<AccessControlRemovalOutcome> UnassignRoleAsync(
+        AccessSubject subject,
+        string roleName,
+        AccessScope scope,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(scope);
+
+        string normalizedRoleName = AccessRole.NormalizeName(roleName);
+        return this.ExecuteRemovalAsync(
+            token => this.UnassignRoleCoreAsync(subject, normalizedRoleName, scope, token),
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AccessControlRoleDetails>> ListRolesAsync(CancellationToken cancellationToken)
     {
         return await dbContext.Roles
@@ -328,6 +360,39 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
                 role.Assignments.Count))
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(
+        string roleName,
+        CancellationToken cancellationToken)
+    {
+        string normalizedRoleName = AccessRole.NormalizeName(roleName);
+
+        AccessControlRoleAssignmentProjection[] assignments = await dbContext.SubjectRoleAssignments
+            .AsNoTracking()
+            .Where(assignment => assignment.Role != null && assignment.Role.Name == normalizedRoleName)
+            .OrderBy(assignment => assignment.SubjectKind)
+            .ThenBy(assignment => assignment.SubjectId)
+            .ThenBy(assignment => assignment.ScopeValue)
+            .Select(assignment => new AccessControlRoleAssignmentProjection(
+                assignment.Id,
+                assignment.SubjectKind,
+                assignment.SubjectId,
+                normalizedRoleName,
+                assignment.ScopeValue,
+                assignment.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return assignments
+            .Select(assignment => new AccessControlRoleAssignmentDetails(
+                assignment.Id,
+                ToSubjectKind(assignment.SubjectKind),
+                assignment.SubjectId,
+                assignment.RoleName,
+                AccessScope.Parse(assignment.ScopeValue),
+                assignment.CreatedAtUtc))
+            .ToArray();
     }
 
     private async Task<AccessRole> GetRoleAsync(string roleName, CancellationToken cancellationToken)
@@ -379,10 +444,165 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
                     permissionGrant.PermissionCode));
     }
 
-    private static AccessGrantScope ToAccessGrantScope(PersistedPermissionGrant grant) =>
+    private async Task<AccessControlRemovalOutcome> RevokeRolePermissionCoreAsync(
+        string roleName,
+        string permissionCode,
+        CancellationToken cancellationToken)
+    {
+        AccessRolePermission? permission = await dbContext.RolePermissions
+            .SingleOrDefaultAsync(
+                candidate => candidate.PermissionCode == permissionCode &&
+                             candidate.Role != null &&
+                             candidate.Role.Name == roleName,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (permission is null)
+        {
+            return AccessControlRemovalOutcome.NotFound;
+        }
+
+        if (permission.PermissionCode == AccessControlPermissionGrant.OwnerWildcard &&
+            !await this.HasOtherGlobalAdminOwnerAsync(
+                    excludedRoleId: permission.RoleId,
+                    excludedAssignmentId: null,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return AccessControlRemovalOutcome.LastOwnerProtected;
+        }
+
+        dbContext.RolePermissions.Remove(permission);
+        return AccessControlRemovalOutcome.Removed;
+    }
+
+    private async Task<AccessControlRemovalOutcome> UnassignRoleCoreAsync(
+        AccessSubject subject,
+        string roleName,
+        AccessScope scope,
+        CancellationToken cancellationToken)
+    {
+        int subjectKind = ToPersistedKind(subject);
+        AccessSubjectRoleAssignment? assignment = await dbContext.SubjectRoleAssignments
+            .SingleOrDefaultAsync(
+                candidate => candidate.SubjectKind == subjectKind &&
+                             candidate.SubjectId == subject.Id &&
+                             candidate.ScopeValue == scope.Value &&
+                             candidate.Role != null &&
+                             candidate.Role.Name == roleName,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (assignment is null)
+        {
+            return AccessControlRemovalOutcome.NotFound;
+        }
+
+        bool isGlobalAdminOwner = assignment.SubjectKind == (int)AccessSubjectKind.AdminActor &&
+                                  assignment.ScopeValue == AccessScope.Global.Value &&
+                                  await dbContext.RolePermissions.AnyAsync(
+                                      permission => permission.RoleId == assignment.RoleId &&
+                                                    permission.PermissionCode == AccessControlPermissionGrant.OwnerWildcard,
+                                      cancellationToken).ConfigureAwait(false);
+        if (isGlobalAdminOwner &&
+            !await this.HasOtherGlobalAdminOwnerAsync(
+                    excludedRoleId: null,
+                    excludedAssignmentId: assignment.Id,
+                    cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return AccessControlRemovalOutcome.LastOwnerProtected;
+        }
+
+        dbContext.SubjectRoleAssignments.Remove(assignment);
+        return AccessControlRemovalOutcome.Removed;
+    }
+
+    private async Task<bool> HasOtherGlobalAdminOwnerAsync(
+        Guid? excludedRoleId,
+        Guid? excludedAssignmentId,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<AccessSubjectRoleAssignment> assignments = dbContext.SubjectRoleAssignments
+            .AsNoTracking()
+            .Where(assignment =>
+                assignment.SubjectKind == (int)AccessSubjectKind.AdminActor &&
+                assignment.ScopeValue == AccessScope.Global.Value);
+        if (excludedAssignmentId.HasValue)
+        {
+            Guid assignmentId = excludedAssignmentId.Value;
+            assignments = assignments.Where(assignment => assignment.Id != assignmentId);
+        }
+
+        IQueryable<AccessRolePermission> ownerPermissions = dbContext.RolePermissions
+            .AsNoTracking()
+            .Where(permission => permission.PermissionCode == AccessControlPermissionGrant.OwnerWildcard);
+        if (excludedRoleId.HasValue)
+        {
+            Guid roleId = excludedRoleId.Value;
+            ownerPermissions = ownerPermissions.Where(permission => permission.RoleId != roleId);
+        }
+
+        return await assignments
+            .Join(
+                ownerPermissions,
+                assignment => assignment.RoleId,
+                permission => permission.RoleId,
+                static (_, _) => 1)
+            .AnyAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<AccessControlRemovalOutcome> ExecuteRemovalAsync(
+        Func<CancellationToken, Task<AccessControlRemovalOutcome>> remove,
+        CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational())
+        {
+            AccessControlRemovalOutcome inMemoryOutcome = await remove(cancellationToken).ConfigureAwait(false);
+            if (inMemoryOutcome == AccessControlRemovalOutcome.Removed)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return inMemoryOutcome;
+        }
+
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+        int managementLockAcquired = await dbContext.BootstrapState
+            .Where(state => state.Id == AccessBootstrapState.SingletonId)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(
+                    state => state.ManagementRevision,
+                    state => state.ManagementRevision + 1),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (managementLockAcquired != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("The access-control management safety lock is unavailable.");
+        }
+
+        AccessControlRemovalOutcome outcome = await remove(cancellationToken).ConfigureAwait(false);
+        if (outcome == AccessControlRemovalOutcome.Removed)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return outcome;
+    }
+
+    private static AccessGrantScope ToAccessGrantScope(
+        PersistedPermissionGrant grant,
+        AccessScopeMatchOptions permissionMatchOptions) =>
         grant.PermissionCode == AccessControlPermissionGrant.OwnerWildcard
             ? new AccessGrantScope(grant.Scope, OwnerWildcardScopeMatchOptions)
-            : new AccessGrantScope(grant.Scope, ExactScopeMatchOptions);
+            : new AccessGrantScope(grant.Scope, permissionMatchOptions);
 
     private static string[] GetCandidateScopeValues(AccessScope requestedScope)
     {
@@ -413,6 +633,17 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
         return (int)subject.Kind;
     }
 
+    private static AccessSubjectKind ToSubjectKind(int persistedKind)
+    {
+        AccessSubjectKind kind = (AccessSubjectKind)persistedKind;
+        if (kind == AccessSubjectKind.Unknown || !Enum.IsDefined(kind))
+        {
+            throw new InvalidOperationException($"Persisted access subject kind '{persistedKind}' is invalid.");
+        }
+
+        return kind;
+    }
+
     private sealed record PersistedPermissionGrant(
         int SubjectKind,
         string SubjectId,
@@ -421,4 +652,12 @@ internal sealed class AccessControlRbacRepository(AccessControlDbContext dbConte
     {
         public AccessScope Scope => AccessScope.Parse(this.ScopeValue);
     }
+
+    private sealed record AccessControlRoleAssignmentProjection(
+        Guid Id,
+        int SubjectKind,
+        string SubjectId,
+        string RoleName,
+        string ScopeValue,
+        DateTimeOffset CreatedAtUtc);
 }

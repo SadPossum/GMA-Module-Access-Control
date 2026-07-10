@@ -38,6 +38,9 @@ namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<long>("ManagementRevision")
+                        .HasColumnType("bigint");
+
                     b.HasKey("Id");
 
                     b.ToTable("bootstrap_state", "access");
@@ -45,7 +48,8 @@ namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
                     b.HasData(
                         new
                         {
-                            Id = 1
+                            Id = 1,
+                            ManagementRevision = 0L
                         });
                 });
 

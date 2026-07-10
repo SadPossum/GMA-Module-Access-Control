@@ -4,9 +4,9 @@ using Gma.Framework.AccessControl;
 using Gma.Framework.Cqrs;
 using Gma.Modules.AccessControl.Application.Commands;
 
-internal sealed class AssignRoleCommandValidator : ICommandValidator<AssignRoleCommand>
+internal sealed class UnassignRoleCommandValidator : ICommandValidator<UnassignRoleCommand>
 {
-    public IEnumerable<string> Validate(AssignRoleCommand command)
+    public IEnumerable<string> Validate(UnassignRoleCommand command)
     {
         if (!AccessSubject.TryCreate(command.SubjectKind, command.SubjectId, out _))
         {

@@ -12,6 +12,7 @@ internal sealed class AccessBootstrapStateConfiguration : IEntityTypeConfigurati
         builder.ToTable("bootstrap_state");
         builder.HasKey(state => state.Id);
         builder.Property(state => state.ClaimedBy).HasMaxLength(AccessSubject.IdMaxLength);
-        builder.HasData(new { Id = AccessBootstrapState.SingletonId });
+        builder.Property(state => state.ManagementRevision).IsRequired();
+        builder.HasData(new { Id = AccessBootstrapState.SingletonId, ManagementRevision = 0L });
     }
 }

@@ -8,5 +8,8 @@ public static class AccessControlAdminOperationNames
     public const string RolesList = AccessControlModuleMetadata.AdminSurfaceName + ".roles.list";
     public const string RolesCreate = AccessControlModuleMetadata.AdminSurfaceName + ".roles.create";
     public const string RolesGrant = AccessControlModuleMetadata.AdminSurfaceName + ".roles.grant";
+    public const string RolesRevoke = AccessControlModuleMetadata.AdminSurfaceName + ".roles.revoke";
     public const string RolesAssign = AccessControlModuleMetadata.AdminSurfaceName + ".roles.assign";
+    public const string RolesUnassign = AccessControlModuleMetadata.AdminSurfaceName + ".roles.unassign";
+    public const string RoleAssignmentsList = AccessControlModuleMetadata.AdminSurfaceName + ".roles.assignments.list";
 }
