@@ -3,6 +3,7 @@ namespace Gma.Modules.AccessControl.Tests;
 using Gma.Framework.AccessControl;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Cqrs.UnitOfWork;
+using Gma.Framework.Messaging;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Commands;
@@ -89,6 +90,7 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(AccessControlDbContext));
         Assert.Single(builder.Services, HasService<IAccessControlRbacRepository, AccessControlRbacRepository>());
         Assert.Single(builder.Services, HasService<IUnitOfWork, AccessControlUnitOfWork>());
+        Assert.Single(builder.Services, HasService<IInboxStore, AccessControlInboxStore>());
     }
 
     [Fact]

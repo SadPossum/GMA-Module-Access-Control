@@ -1,5 +1,6 @@
 namespace Gma.Modules.AccessControl.Persistence;
 
+using Gma.Framework.Messaging.Infrastructure;
 using Gma.Modules.AccessControl.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,7 @@ public sealed class AccessControlDbContext(DbContextOptions<AccessControlDbConte
     public DbSet<AccessRole> Roles => this.Set<AccessRole>();
     public DbSet<AccessRolePermission> RolePermissions => this.Set<AccessRolePermission>();
     public DbSet<AccessSubjectRoleAssignment> SubjectRoleAssignments => this.Set<AccessSubjectRoleAssignment>();
+    public DbSet<InboxMessage> InboxMessages => this.Set<InboxMessage>();
     internal DbSet<AccessBootstrapState> BootstrapState => this.Set<AccessBootstrapState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

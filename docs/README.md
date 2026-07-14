@@ -148,3 +148,5 @@ Point authorization and `IAccessGrantScopeReader` resolve the same descriptor po
 Modules declare permission codes in contracts/metadata. Roles are operator configuration and should not be hard-coded in product modules.
 
 AccessControl references framework contracts and persistence helpers only. It must not reference Auth internals, Administration internals, NATS, Redis, or product modules.
+
+Its persistence package owns a broker-neutral inbox. Cross-module extensions may therefore bind durable integration-event consumers to AccessControl without moving idempotency or transaction ownership into the producing module.

@@ -1,6 +1,7 @@
 namespace Gma.Modules.AccessControl.Persistence;
 
 using Gma.Framework.Cqrs.UnitOfWork;
+using Gma.Framework.Messaging;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Persistence.Repositories;
@@ -27,6 +28,7 @@ public static class DependencyInjection
 
         builder.Services.TryAddScoped<IAccessControlRbacRepository, AccessControlRbacRepository>();
         builder.Services.TryAddEnumerable(ServiceDescriptor.Scoped<IUnitOfWork, AccessControlUnitOfWork>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Scoped<IInboxStore, AccessControlInboxStore>());
 
         return builder;
     }
