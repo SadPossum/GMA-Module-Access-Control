@@ -8,6 +8,7 @@ using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Entities;
 using Gma.Modules.AccessControl.Persistence.Repositories;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -325,6 +326,56 @@ public sealed class AccessControlRbacRepositoryTests
         Assert.Equal(
             AccessControlRemovalOutcome.NotFound,
             await repository.UnassignRoleAsync(user, "property-reader", tenantA, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Unassign_role_participates_in_an_existing_relational_transaction()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync();
+        DbContextOptions<AccessControlDbContext> options = new DbContextOptionsBuilder<AccessControlDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using AccessControlDbContext dbContext = new(options);
+        await dbContext.Database.EnsureCreatedAsync();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject subject = AccessSubject.User("member-a");
+        AccessScope scope = AccessScope.Parse("tenant:tenant-a");
+
+        await repository.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("workspace-member", Now, CancellationToken.None);
+        await repository.EnsureRoleAssignmentAsync(
+            subject,
+            "workspace-member",
+            scope,
+            Now,
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
+            await dbContext.Database.BeginTransactionAsync();
+
+        AccessControlRemovalOutcome removed = await repository.UnassignRoleAsync(
+            subject,
+            "workspace-member",
+            scope,
+            CancellationToken.None);
+        AccessControlRemovalOutcome missing = await repository.UnassignRoleAsync(
+            subject,
+            "workspace-member",
+            scope,
+            CancellationToken.None);
+
+        Assert.Equal(AccessControlRemovalOutcome.Removed, removed);
+        Assert.Equal(AccessControlRemovalOutcome.NotFound, missing);
+        Assert.Same(transaction, dbContext.Database.CurrentTransaction);
+        await transaction.CommitAsync();
+
+        Assert.False(await repository.AssignmentExistsAsync(
+            subject,
+            "workspace-member",
+            scope,
+            CancellationToken.None));
     }
 
     [Fact]

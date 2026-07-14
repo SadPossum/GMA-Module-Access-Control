@@ -566,9 +566,34 @@ internal sealed class AccessControlRbacRepository(
             return inMemoryOutcome;
         }
 
+        if (dbContext.Database.CurrentTransaction is not null)
+        {
+            return await this.ExecuteRemovalWithinTransactionAsync(remove, cancellationToken).ConfigureAwait(false);
+        }
+
         await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await dbContext.Database
             .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
             .ConfigureAwait(false);
+        AccessControlRemovalOutcome outcome = await this.ExecuteRemovalWithinTransactionAsync(
+                remove,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (outcome == AccessControlRemovalOutcome.Removed)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return outcome;
+    }
+
+    private async Task<AccessControlRemovalOutcome> ExecuteRemovalWithinTransactionAsync(
+        Func<CancellationToken, Task<AccessControlRemovalOutcome>> remove,
+        CancellationToken cancellationToken)
+    {
         int managementLockAcquired = await dbContext.BootstrapState
             .Where(state => state.Id == AccessBootstrapState.SingletonId)
             .ExecuteUpdateAsync(
@@ -579,7 +604,6 @@ internal sealed class AccessControlRbacRepository(
             .ConfigureAwait(false);
         if (managementLockAcquired != 1)
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException("The access-control management safety lock is unavailable.");
         }
 
@@ -587,11 +611,6 @@ internal sealed class AccessControlRbacRepository(
         if (outcome == AccessControlRemovalOutcome.Removed)
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return outcome;
