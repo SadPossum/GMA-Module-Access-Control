@@ -11,6 +11,7 @@ using Gma.Modules.AccessControl.Application.Handlers;
 using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Application.Queries;
 using Gma.Modules.AccessControl.Application.Validation;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.Extensions.Configuration;
@@ -91,6 +92,15 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(builder.Services, HasService<IAccessControlRbacRepository, AccessControlRbacRepository>());
         Assert.Single(builder.Services, HasService<IUnitOfWork, AccessControlUnitOfWork>());
         Assert.Single(builder.Services, HasService<IInboxStore, AccessControlInboxStore>());
+    }
+
+    [Fact]
+    public void Inbox_store_uses_the_module_name_instead_of_the_database_schema()
+    {
+        AccessControlInboxStore store = new(null!, null!, null!);
+
+        Assert.Equal(AccessControlModuleMetadata.Name, store.ModuleName);
+        Assert.NotEqual(AccessControlMigrations.Schema, store.ModuleName);
     }
 
     [Fact]

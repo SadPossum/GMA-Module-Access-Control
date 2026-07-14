@@ -3,6 +3,7 @@ namespace Gma.Modules.AccessControl.Persistence;
 using Gma.Framework.Messaging.Infrastructure;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
+using Gma.Modules.AccessControl.Contracts;
 
 internal sealed class AccessControlInboxStore(
     AccessControlDbContext dbContext,
@@ -12,4 +13,4 @@ internal sealed class AccessControlInboxStore(
         dbContext,
         clock,
         idGenerator,
-        AccessControlMigrations.Schema);
+        AccessControlModuleMetadata.Name);
