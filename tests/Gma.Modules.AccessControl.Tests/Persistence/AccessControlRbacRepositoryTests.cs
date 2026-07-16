@@ -260,10 +260,18 @@ public sealed class AccessControlRbacRepositoryTests
 
         IReadOnlyList<AccessControlRoleAssignmentDetails> assignments = await repository
             .ListRoleAssignmentsAsync("property-reader", CancellationToken.None);
+        IReadOnlyList<AccessControlRoleAssignmentDetails> tenantAssignments = await repository
+            .ListRoleAssignmentsAsync(
+                "property-reader",
+                AccessScope.Parse("tenant:tenant-a"),
+                CancellationToken.None);
 
         Assert.Equal(2, assignments.Count);
         Assert.Contains(assignments, assignment => assignment.SubjectKind == AccessSubjectKind.User && assignment.SubjectId == "member-a");
         Assert.Contains(assignments, assignment => assignment.SubjectKind == AccessSubjectKind.AdminActor && assignment.SubjectId == "member-a");
+        AccessControlRoleAssignmentDetails tenantAssignment = Assert.Single(tenantAssignments);
+        Assert.Equal(AccessSubjectKind.User, tenantAssignment.SubjectKind);
+        Assert.Equal("member-a", tenantAssignment.SubjectId);
     }
 
     [Fact]

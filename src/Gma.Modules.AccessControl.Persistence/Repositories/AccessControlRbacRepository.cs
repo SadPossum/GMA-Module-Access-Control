@@ -364,13 +364,34 @@ internal sealed class AccessControlRbacRepository(
 
     public async Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(
         string roleName,
+        CancellationToken cancellationToken) =>
+        await this.ListRoleAssignmentsAsync(roleName, scopeValue: null, cancellationToken).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(
+        string roleName,
+        AccessScope scope,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        return await this.ListRoleAssignmentsAsync(roleName, scope.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(
+        string roleName,
+        string? scopeValue,
         CancellationToken cancellationToken)
     {
         string normalizedRoleName = AccessRole.NormalizeName(roleName);
 
-        AccessControlRoleAssignmentProjection[] assignments = await dbContext.SubjectRoleAssignments
+        IQueryable<AccessSubjectRoleAssignment> query = dbContext.SubjectRoleAssignments
             .AsNoTracking()
-            .Where(assignment => assignment.Role != null && assignment.Role.Name == normalizedRoleName)
+            .Where(assignment => assignment.Role != null && assignment.Role.Name == normalizedRoleName);
+        if (scopeValue is not null)
+        {
+            query = query.Where(assignment => assignment.ScopeValue == scopeValue);
+        }
+
+        AccessControlRoleAssignmentProjection[] assignments = await query
             .OrderBy(assignment => assignment.SubjectKind)
             .ThenBy(assignment => assignment.SubjectId)
             .ThenBy(assignment => assignment.ScopeValue)

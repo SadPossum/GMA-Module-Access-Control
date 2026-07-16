@@ -28,4 +28,5 @@ public interface IAccessControlRbacRepository
     Task<AccessControlRemovalOutcome> UnassignRoleAsync(AccessSubject subject, string roleName, AccessScope scope, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleDetails>> ListRolesAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(string roleName, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(string roleName, AccessScope scope, CancellationToken cancellationToken);
 }
