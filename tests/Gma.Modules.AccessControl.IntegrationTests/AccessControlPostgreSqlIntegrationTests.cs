@@ -12,6 +12,7 @@ using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.Entities;
 using Gma.Modules.AccessControl.Domain.Enums;
+using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Gma.Modules.AccessControl.IntegrationTests.Support;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
@@ -19,6 +20,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Testcontainers.PostgreSql;
 using Xunit;
+using ContractChangeKind = Gma.Modules.AccessControl.Contracts.AccessProfileChangeKind;
+using DomainChangeKind = Gma.Modules.AccessControl.Domain.Enums.AccessProfileChangeKind;
 
 [Trait("Category", "Docker")]
 [Trait("Category", "Integration")]
@@ -26,7 +29,7 @@ public sealed class AccessControlPostgreSqlIntegrationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 19, 10, 0, 0, TimeSpan.Zero);
     private static readonly AccessScope TenantScope = AccessScope.Parse("tenant:tenant-a");
-    private static readonly AccessSubject Actor = AccessSubject.AdminActor("actor-a");
+    private static readonly AccessProfileSubject Actor = new(AccessProfileSubjectKind.AdminActor, "actor-a");
 
     [DockerFact]
     public async Task Concurrent_bootstrap_has_exactly_one_winner()
@@ -99,7 +102,7 @@ public sealed class AccessControlPostgreSqlIntegrationTests
             seed.AccessProfiles.Add(profile);
             seed.AccessProfileAssignments.Add(CreateAssignment(profile.Id, subject));
             profile.RecordAssignmentChange(
-                Guid.NewGuid(), AccessProfileChangeKind.Assigned, Actor, subject, Now.AddMinutes(1));
+                Guid.NewGuid(), DomainChangeKind.Assigned, Actor, ToDomain(subject), Now.AddMinutes(1));
             await seed.SaveChangesAsync();
         }
 
@@ -131,7 +134,7 @@ public sealed class AccessControlPostgreSqlIntegrationTests
             await writer.SaveChangesAsync();
             AccessControlPage<AccessProfileChangeDetails> history = await profiles.ListChangesAsync(
                 profile.Id, TenantScope, PageRequest.Normalize(1, 10), CancellationToken.None);
-            Assert.Equal(["archived", "assigned", "created"],
+            Assert.Equal([ContractChangeKind.Archived, ContractChangeKind.Assigned, ContractChangeKind.Created],
                 history.Items.Select(change => change.Kind));
         }
 
@@ -228,7 +231,7 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     private static AccessProfile CreateProfile(string key, IReadOnlyCollection<string> permissions)
     {
         Result<AccessProfile> result = AccessProfile.Create(
-            Guid.NewGuid(), TenantScope, key, key, null,
+            Guid.NewGuid(), TenantScope.Value, key, key, null,
             permissions, Actor, Guid.NewGuid(), Now);
         Assert.True(result.IsSuccess);
         return result.Value;
@@ -237,10 +240,22 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     private static AccessProfileAssignment CreateAssignment(Guid profileId, AccessSubject subject)
     {
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
-            Guid.NewGuid(), profileId, subject, Actor, Now);
+            Guid.NewGuid(), profileId, ToDomain(subject), Actor, Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }
+
+    private static AccessProfileSubject ToDomain(AccessSubject subject) =>
+        new(
+            subject.Kind switch
+            {
+                AccessSubjectKind.User => AccessProfileSubjectKind.User,
+                AccessSubjectKind.AdminActor => AccessProfileSubjectKind.AdminActor,
+                AccessSubjectKind.Service => AccessProfileSubjectKind.Service,
+                AccessSubjectKind.System => AccessProfileSubjectKind.System,
+                _ => throw new ArgumentOutOfRangeException(nameof(subject))
+            },
+            subject.Id);
 
     private static AccessControlDbContext CreateDbContext(
         string connectionString,

@@ -47,13 +47,19 @@ internal sealed class AssignAccessProfileCommandHandler(
 
         DateTimeOffset nowUtc = clock.UtcNow;
         Result<AccessProfileAssignment> assignment = AccessProfileAssignment.Create(
-            ids.NewId(), profile.Id, command.Subject, command.Actor, nowUtc);
+            ids.NewId(), profile.Id,
+            AccessProfileSubjectMappings.ToDomain(command.Subject),
+            AccessProfileSubjectMappings.ToDomain(command.Actor),
+            nowUtc);
         if (assignment.IsFailure) return Result.Failure<AccessProfileAssignmentDetails>(assignment.Error);
 
         await rbac.EnsureSubjectAsync(command.Subject, nowUtc, cancellationToken).ConfigureAwait(false);
         profiles.AddAssignment(assignment.Value);
         profile.RecordAssignmentChange(
-            ids.NewId(), AccessProfileChangeKind.Assigned, command.Actor, command.Subject, nowUtc);
+            ids.NewId(), AccessProfileChangeKind.Assigned,
+            AccessProfileSubjectMappings.ToDomain(command.Actor),
+            AccessProfileSubjectMappings.ToDomain(command.Subject),
+            nowUtc);
         return Result.Success(new AccessProfileAssignmentDetails(
             assignment.Value.Id, profile.Id, command.Subject.Kind, command.Subject.Id,
             command.Actor.Kind, command.Actor.Id, nowUtc));

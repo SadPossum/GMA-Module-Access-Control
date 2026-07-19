@@ -1,9 +1,9 @@
 namespace Gma.Modules.AccessControl.Domain.Entities;
 
-using Gma.Framework.AccessControl;
 using Gma.Framework.Results;
 using Gma.Modules.AccessControl.Domain.Errors;
 using Gma.Modules.AccessControl.Domain.Aggregates;
+using Gma.Modules.AccessControl.Domain.ValueObjects;
 
 public sealed class AccessProfileAssignment
 {
@@ -12,8 +12,8 @@ public sealed class AccessProfileAssignment
     private AccessProfileAssignment(
         Guid id,
         Guid profileId,
-        AccessSubject subject,
-        AccessSubject actor,
+        AccessProfileSubject subject,
+        AccessProfileSubject actor,
         DateTimeOffset createdAtUtc)
     {
         this.Id = id;
@@ -37,8 +37,8 @@ public sealed class AccessProfileAssignment
     public static Result<AccessProfileAssignment> Create(
         Guid id,
         Guid profileId,
-        AccessSubject? subject,
-        AccessSubject? actor,
+        AccessProfileSubject? subject,
+        AccessProfileSubject? actor,
         DateTimeOffset createdAtUtc)
     {
         if (id == Guid.Empty)

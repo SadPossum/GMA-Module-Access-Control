@@ -12,6 +12,7 @@ using Gma.Modules.AccessControl.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Data;
+using DomainAccessProfileStatus = Gma.Modules.AccessControl.Domain.Enums.AccessProfileStatus;
 
 internal sealed class AccessControlRbacRepository(
     AccessControlDbContext dbContext,
@@ -630,7 +631,7 @@ internal sealed class AccessControlRbacRepository(
                     assignment.SubjectKind == subjectKind &&
                     assignment.SubjectId == subject.Id &&
                     assignment.Profile != null &&
-                    assignment.Profile.Status == AccessProfileStatus.Active);
+                    assignment.Profile.Status == DomainAccessProfileStatus.Active);
         if (candidateScopeValues is not null)
         {
             profileAssignments = profileAssignments.Where(assignment =>

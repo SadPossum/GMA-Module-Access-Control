@@ -31,8 +31,8 @@ internal sealed class CreateAccessProfileCommandHandler(
         }
 
         Result<AccessProfile> profile = AccessProfile.Create(
-            ids.NewId(), command.OwnerScope, key.Value.Value, command.DisplayName, command.Description,
-            command.Permissions, command.Actor, ids.NewId(), clock.UtcNow);
+            ids.NewId(), command.OwnerScope.Value, key.Value.Value, command.DisplayName, command.Description,
+            command.Permissions, AccessProfileSubjectMappings.ToDomain(command.Actor), ids.NewId(), clock.UtcNow);
         if (profile.IsFailure) return Result.Failure<AccessProfileDetails>(profile.Error);
 
         repository.Add(profile.Value);

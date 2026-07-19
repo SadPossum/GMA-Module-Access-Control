@@ -1,11 +1,8 @@
-namespace Gma.Modules.AccessControl.Application;
+namespace Gma.Modules.AccessControl.Contracts;
 
-using Gma.Framework.AccessControl;
-using Gma.Modules.AccessControl.Contracts;
-
-public sealed record AccessProfileDetails(
+public sealed record AccessProfileDto(
     Guid Id,
-    AccessScope OwnerScope,
+    string OwnerScope,
     string Key,
     string DisplayName,
     string Description,

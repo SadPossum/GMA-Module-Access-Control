@@ -7,6 +7,8 @@ using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Handlers;
 using Gma.Modules.AccessControl.Domain.Aggregates;
+using Gma.Modules.AccessControl.Domain.Enums;
+using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -79,8 +81,8 @@ public sealed class AccessProfilePermissionPolicyTests
         await using AccessControlDbContext dbContext = new(options);
         AccessProfileRepository repository = new(dbContext);
         Result<AccessProfile> created = AccessProfile.Create(
-            Guid.NewGuid(), Scope, "front-desk", "Front desk", null,
-            ["reservations.read"], Actor, Guid.NewGuid(), DateTimeOffset.UtcNow);
+            Guid.NewGuid(), Scope.Value, "front-desk", "Front desk", null,
+            ["reservations.read"], ToDomain(Actor), Guid.NewGuid(), DateTimeOffset.UtcNow);
         Assert.True(created.IsSuccess);
         repository.Add(created.Value);
         await dbContext.SaveChangesAsync();
@@ -106,6 +108,18 @@ public sealed class AccessProfilePermissionPolicyTests
         Assert.Equal(AccessControlApplicationErrors.ProfilePermissionEscalation, result.Error);
         Assert.Empty(dbContext.AccessProfileAssignments);
     }
+
+    private static AccessProfileSubject ToDomain(AccessSubject subject) =>
+        new(
+            subject.Kind switch
+            {
+                AccessSubjectKind.User => AccessProfileSubjectKind.User,
+                AccessSubjectKind.AdminActor => AccessProfileSubjectKind.AdminActor,
+                AccessSubjectKind.Service => AccessProfileSubjectKind.Service,
+                AccessSubjectKind.System => AccessProfileSubjectKind.System,
+                _ => throw new ArgumentOutOfRangeException(nameof(subject))
+            },
+            subject.Id);
 
     private static AccessProfilePermissionPolicy CreatePolicy(
         IAccessAuthorizationService authorization,

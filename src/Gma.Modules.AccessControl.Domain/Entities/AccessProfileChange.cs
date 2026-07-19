@@ -1,8 +1,8 @@
 namespace Gma.Modules.AccessControl.Domain.Entities;
 
-using Gma.Framework.AccessControl;
 using Gma.Modules.AccessControl.Domain.Enums;
 using Gma.Modules.AccessControl.Domain.Aggregates;
+using Gma.Modules.AccessControl.Domain.ValueObjects;
 
 public sealed class AccessProfileChange
 {
@@ -12,10 +12,10 @@ public sealed class AccessProfileChange
         Guid id,
         Guid profileId,
         AccessProfileChangeKind kind,
-        AccessSubject actor,
+        AccessProfileSubject actor,
         long profileVersion,
         DateTimeOffset occurredAtUtc,
-        AccessSubject? assignmentSubject = null)
+        AccessProfileSubject? assignmentSubject = null)
     {
         this.Id = id;
         this.ProfileId = profileId;

@@ -7,8 +7,9 @@ using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.Entities;
-using Gma.Modules.AccessControl.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using DomainChangeKind = Gma.Modules.AccessControl.Domain.Enums.AccessProfileChangeKind;
+using DomainStatus = Gma.Modules.AccessControl.Domain.Enums.AccessProfileStatus;
 
 internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) : IAccessProfileRepository
 {
@@ -88,7 +89,7 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
             .Where(profile => profile.OwnerScopeValue == ownerScope.Value);
         if (!includeArchived)
         {
-            profiles = profiles.Where(profile => profile.Status == AccessProfileStatus.Active);
+            profiles = profiles.Where(profile => profile.Status == DomainStatus.Active);
         }
 
         IQueryable<AccessProfile> page = profiles
@@ -148,7 +149,7 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
                 change.SubjectKind, change.SubjectId, change.ProfileVersion, change.OccurredAtUtc))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         AccessProfileChangeDetails[] rows = persisted.Select(change => new AccessProfileChangeDetails(
-            change.Id, change.ProfileId, AccessProfileChangeKindNames.GetName(change.Kind),
+            change.Id, change.ProfileId, ToContract(change.Kind),
             ToSubjectKind(change.ActorKind), change.ActorId,
             change.SubjectKind.HasValue ? ToSubjectKind(change.SubjectKind.Value) : null,
             change.SubjectId, change.ProfileVersion, change.OccurredAtUtc)).ToArray();
@@ -162,7 +163,7 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
             profile.Key,
             profile.DisplayName,
             profile.Description,
-            AccessProfileStatusNames.GetName(profile.Status),
+            profile.Status,
             profile.Version,
             profile.Permissions.OrderBy(permission => permission.PermissionCode)
                 .Select(permission => permission.PermissionCode).ToArray(),
@@ -177,7 +178,7 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
             profile.Key,
             profile.DisplayName,
             profile.Description,
-            profile.Status,
+            ToContract(profile.Status),
             profile.Version,
             profile.Permissions,
             profile.AssignmentCount,
@@ -195,6 +196,25 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
             : throw new InvalidOperationException($"Persisted access subject kind '{value}' is invalid.");
     }
 
+    private static AccessProfileStatus ToContract(DomainStatus status) =>
+        status switch
+        {
+            DomainStatus.Active => AccessProfileStatus.Active,
+            DomainStatus.Archived => AccessProfileStatus.Archived,
+            _ => throw new InvalidOperationException($"Access-profile status '{status}' is invalid.")
+        };
+
+    private static AccessProfileChangeKind ToContract(DomainChangeKind kind) =>
+        kind switch
+        {
+            DomainChangeKind.Created => AccessProfileChangeKind.Created,
+            DomainChangeKind.Updated => AccessProfileChangeKind.Updated,
+            DomainChangeKind.Archived => AccessProfileChangeKind.Archived,
+            DomainChangeKind.Assigned => AccessProfileChangeKind.Assigned,
+            DomainChangeKind.Unassigned => AccessProfileChangeKind.Unassigned,
+            _ => throw new InvalidOperationException($"Access-profile change kind '{kind}' is invalid.")
+        };
+
     private sealed record AccessProfileAssignmentProjection(
         Guid Id, Guid ProfileId, int SubjectKind, string SubjectId,
         int CreatedByKind, string CreatedById, DateTimeOffset CreatedAtUtc);
@@ -205,7 +225,7 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
         string Key,
         string DisplayName,
         string Description,
-        string Status,
+        DomainStatus Status,
         long Version,
         string[] Permissions,
         int AssignmentCount,
@@ -213,6 +233,6 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
         DateTimeOffset LastChangedAtUtc);
 
     private sealed record AccessProfileChangeProjection(
-        Guid Id, Guid ProfileId, AccessProfileChangeKind Kind, int ActorKind, string ActorId,
+        Guid Id, Guid ProfileId, DomainChangeKind Kind, int ActorKind, string ActorId,
         int? SubjectKind, string? SubjectId, long ProfileVersion, DateTimeOffset OccurredAtUtc);
 }

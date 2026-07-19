@@ -31,7 +31,10 @@ internal sealed class UnassignAccessProfileCommandHandler(
 
         repository.RemoveAssignment(assignment);
         profile.RecordAssignmentChange(
-            ids.NewId(), AccessProfileChangeKind.Unassigned, command.Actor, command.Subject, clock.UtcNow);
+            ids.NewId(), AccessProfileChangeKind.Unassigned,
+            AccessProfileSubjectMappings.ToDomain(command.Actor),
+            AccessProfileSubjectMappings.ToDomain(command.Subject),
+            clock.UtcNow);
         return Result.Success(Unit.Value);
     }
 }

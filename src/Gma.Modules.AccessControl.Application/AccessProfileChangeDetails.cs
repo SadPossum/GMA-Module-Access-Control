@@ -1,11 +1,12 @@
 namespace Gma.Modules.AccessControl.Application;
 
 using Gma.Framework.AccessControl;
+using Gma.Modules.AccessControl.Contracts;
 
 public sealed record AccessProfileChangeDetails(
     Guid Id,
     Guid ProfileId,
-    string Kind,
+    AccessProfileChangeKind Kind,
     AccessSubjectKind ActorKind,
     string ActorId,
     AccessSubjectKind? SubjectKind,

@@ -29,7 +29,7 @@ internal sealed class UpdateAccessProfileCommandHandler(
 
         Result updated = profile.Update(
             command.DisplayName, command.Description, command.Permissions, command.ExpectedVersion,
-            command.Actor, ids.NewId(), clock.UtcNow);
+            AccessProfileSubjectMappings.ToDomain(command.Actor), ids.NewId(), clock.UtcNow);
         if (updated.IsFailure) return Result.Failure<AccessProfileDetails>(updated.Error);
 
         int assignments = await repository.CountAssignmentsAsync(profile.Id, cancellationToken).ConfigureAwait(false);

@@ -1,17 +1,17 @@
 namespace Gma.Modules.AccessControl.Tests;
 
-using Gma.Framework.AccessControl;
 using Gma.Framework.Results;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.Enums;
 using Gma.Modules.AccessControl.Domain.Errors;
+using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Xunit;
 
 [Trait("Category", "Unit")]
 public sealed class AccessProfileTests
 {
-    private static readonly AccessScope OwnerScope = AccessScope.Parse("tenant:tenant-a");
-    private static readonly AccessSubject Actor = AccessSubject.AdminActor("actor-a");
+    private const string OwnerScope = "tenant:tenant-a";
+    private static readonly AccessProfileSubject Actor = new(AccessProfileSubjectKind.AdminActor, "actor-a");
     private static readonly DateTimeOffset Now = new(2026, 7, 19, 8, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -19,7 +19,7 @@ public sealed class AccessProfileTests
     {
         Result<AccessProfile> result = AccessProfile.Create(
             Guid.NewGuid(),
-            AccessScope.Global,
+            AccessProfileOwnerScope.GlobalValue,
             "front-desk",
             "Front desk",
             null,
@@ -116,7 +116,7 @@ public sealed class AccessProfileTests
     public void Assignment_changes_record_actor_and_subject_without_rewriting_profile_version()
     {
         AccessProfile profile = CreateProfile();
-        AccessSubject subject = AccessSubject.User("user-a");
+        AccessProfileSubject subject = new(AccessProfileSubjectKind.User, "user-a");
 
         profile.RecordAssignmentChange(
             Guid.NewGuid(), AccessProfileChangeKind.Assigned, Actor, subject, Now.AddMinutes(1));

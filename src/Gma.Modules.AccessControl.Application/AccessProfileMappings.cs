@@ -1,7 +1,9 @@
 namespace Gma.Modules.AccessControl.Application;
 
+using Gma.Framework.AccessControl;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
-using Gma.Modules.AccessControl.Domain.Enums;
+using DomainStatus = Gma.Modules.AccessControl.Domain.Enums.AccessProfileStatus;
 
 internal static class AccessProfileMappings
 {
@@ -10,11 +12,11 @@ internal static class AccessProfileMappings
         ArgumentNullException.ThrowIfNull(profile);
         return new AccessProfileDetails(
             profile.Id,
-            profile.OwnerScope,
+            AccessScope.Parse(profile.OwnerScopeValue),
             profile.Key,
             profile.DisplayName,
             profile.Description,
-            AccessProfileStatusNames.GetName(profile.Status),
+            ToContract(profile.Status),
             profile.Version,
             profile.Permissions.Select(permission => permission.PermissionCode).Order(StringComparer.Ordinal).ToArray(),
             assignmentCount,
@@ -22,4 +24,11 @@ internal static class AccessProfileMappings
             profile.LastChangedAtUtc);
     }
 
+    private static AccessProfileStatus ToContract(DomainStatus status) =>
+        status switch
+        {
+            DomainStatus.Active => AccessProfileStatus.Active,
+            DomainStatus.Archived => AccessProfileStatus.Archived,
+            _ => throw new InvalidOperationException($"Access-profile status '{status}' is invalid.")
+        };
 }

@@ -41,6 +41,7 @@ The existing global role model remains the compatibility and operator surface. T
 ### 2. Scoped Access Profiles
 
 - add a dedicated domain model with immutable profile id, immutable internal key, owning `AccessScope`, display name, description, active/archived state, and optimistic version;
+- keep framework `AccessScope` and `AccessSubject` at the Application boundary; model persisted owner scope and profile actors with AccessControl-owned domain value objects;
 - keep profiles separate from globally named compatibility roles;
 - make profile keys unique only inside their owning scope so different tenants may use the same key or display name;
 - own profile permissions and profile assignments in AccessControl persistence;
@@ -70,6 +71,7 @@ The existing global role model remains the compatibility and operator surface. T
 - fetch one extra row to expose `HasMore` without an unbounded count;
 - update Admin API and CLI role-list surfaces to accept bounded paging;
 - add an optional normal API front door for scoped profiles without depending on Administration;
+- expose status, history kind, and assignment-removal outcomes as string-serialized contract enums while keeping Domain types behind Application and Persistence;
 - keep bootstrap and global compatibility-role mutation on the Administration front doors.
 
 ### 6. Persistence And Proof
@@ -142,4 +144,4 @@ No Framework change is planned. Existing access-control, permission-descriptor, 
 
 ## Current Verification
 
-The module implementation is present and remains in progress pending canonical Skeleton and BunkFy consumer alignment. Current local proof includes 52 fast tests and 5 real PostgreSQL integration tests; exact publication commits and CI runs will be recorded after the consumer chain is green.
+The module implementation is present and remains in progress pending canonical Skeleton and BunkFy consumer alignment. Current local proof includes boundary checks, a zero-warning build, drift-free SQL Server and PostgreSQL migrations, 66 fast tests, a package vulnerability audit, and 5 real PostgreSQL integration tests. Exact publication commits and CI runs will be recorded after the consumer chain is green.

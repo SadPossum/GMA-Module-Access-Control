@@ -10,17 +10,20 @@ using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.Entities;
 using Gma.Modules.AccessControl.Domain.Enums;
+using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using ContractChangeKind = Gma.Modules.AccessControl.Contracts.AccessProfileChangeKind;
+using DomainChangeKind = Gma.Modules.AccessControl.Domain.Enums.AccessProfileChangeKind;
 
 [Trait("Category", "Unit")]
 public sealed class AccessProfileRepositoryTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 19, 9, 0, 0, TimeSpan.Zero);
-    private static readonly AccessSubject Actor = AccessSubject.AdminActor("actor-a");
+    private static readonly AccessProfileSubject Actor = new(AccessProfileSubjectKind.AdminActor, "actor-a");
 
     [Fact]
     public async Task Profile_catalog_is_scope_isolated_and_bounded()
@@ -75,8 +78,8 @@ public sealed class AccessProfileRepositoryTests
         AccessProfileAssignment assignmentB = CreateAssignment(profile.Id, subjectB, ids.NewId());
         repository.AddAssignment(assignmentA);
         repository.AddAssignment(assignmentB);
-        profile.RecordAssignmentChange(ids.NewId(), AccessProfileChangeKind.Assigned, Actor, subjectA, Now.AddMinutes(1));
-        profile.RecordAssignmentChange(ids.NewId(), AccessProfileChangeKind.Assigned, Actor, subjectB, Now.AddMinutes(2));
+        profile.RecordAssignmentChange(ids.NewId(), DomainChangeKind.Assigned, Actor, ToDomain(subjectA), Now.AddMinutes(1));
+        profile.RecordAssignmentChange(ids.NewId(), DomainChangeKind.Assigned, Actor, ToDomain(subjectB), Now.AddMinutes(2));
         await dbContext.SaveChangesAsync();
 
         AccessControlPage<AccessProfileAssignmentDetails> assignments = await repository.ListAssignmentsAsync(
@@ -98,8 +101,8 @@ public sealed class AccessProfileRepositoryTests
         AccessProfile profile = CreateProfile(tenantA, "front-desk");
         AccessSubject subjectA = AccessSubject.User("user-a");
         AccessSubject subjectB = AccessSubject.User("user-b");
-        profile.RecordAssignmentChange(Guid.NewGuid(), AccessProfileChangeKind.Assigned, Actor, subjectA, Now.AddMinutes(1));
-        profile.RecordAssignmentChange(Guid.NewGuid(), AccessProfileChangeKind.Assigned, Actor, subjectB, Now.AddMinutes(2));
+        profile.RecordAssignmentChange(Guid.NewGuid(), DomainChangeKind.Assigned, Actor, ToDomain(subjectA), Now.AddMinutes(1));
+        profile.RecordAssignmentChange(Guid.NewGuid(), DomainChangeKind.Assigned, Actor, ToDomain(subjectB), Now.AddMinutes(2));
         repository.Add(profile);
         await dbContext.SaveChangesAsync();
 
@@ -111,7 +114,7 @@ public sealed class AccessProfileRepositoryTests
         Assert.Equal(2, history.Items.Count);
         Assert.True(history.HasMore);
         Assert.Equal(
-            ["assigned", "assigned"],
+            [ContractChangeKind.Assigned, ContractChangeKind.Assigned],
             history.Items.Select(change => change.Kind));
         Assert.Empty(wrongScopeHistory.Items);
     }
@@ -136,7 +139,7 @@ public sealed class AccessProfileRepositoryTests
         await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
         profiles.Add(profile);
         profiles.AddAssignment(CreateAssignment(profile.Id, subject, ids.NewId()));
-        profile.RecordAssignmentChange(ids.NewId(), AccessProfileChangeKind.Assigned, Actor, subject, Now);
+        profile.RecordAssignmentChange(ids.NewId(), DomainChangeKind.Assigned, Actor, ToDomain(subject), Now);
         await dbContext.SaveChangesAsync();
 
         bool exactAllowed = await rbac.HasPermissionAsync(
@@ -171,7 +174,7 @@ public sealed class AccessProfileRepositoryTests
         IReadOnlyCollection<string>? permissions = null)
     {
         Result<AccessProfile> result = AccessProfile.Create(
-            Guid.NewGuid(), scope, key, key, null, permissions ?? [], Actor, Guid.NewGuid(), Now);
+            Guid.NewGuid(), scope.Value, key, key, null, permissions ?? [], Actor, Guid.NewGuid(), Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }
@@ -182,10 +185,22 @@ public sealed class AccessProfileRepositoryTests
         Guid id)
     {
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
-            id, profileId, subject, Actor, Now);
+            id, profileId, ToDomain(subject), Actor, Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }
+
+    private static AccessProfileSubject ToDomain(AccessSubject subject) =>
+        new(
+            subject.Kind switch
+            {
+                AccessSubjectKind.User => AccessProfileSubjectKind.User,
+                AccessSubjectKind.AdminActor => AccessProfileSubjectKind.AdminActor,
+                AccessSubjectKind.Service => AccessProfileSubjectKind.Service,
+                AccessSubjectKind.System => AccessProfileSubjectKind.System,
+                _ => throw new ArgumentOutOfRangeException(nameof(subject))
+            },
+            subject.Id);
 
     private static async Task<SqliteConnection> OpenConnectionAsync()
     {

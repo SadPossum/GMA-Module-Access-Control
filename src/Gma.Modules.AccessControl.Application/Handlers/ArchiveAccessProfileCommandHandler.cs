@@ -22,7 +22,11 @@ internal sealed class ArchiveAccessProfileCommandHandler(
             .ConfigureAwait(false);
         if (profile is null) return Result.Failure<Unit>(AccessControlApplicationErrors.ProfileNotFound);
 
-        Result archived = profile.Archive(command.ExpectedVersion, command.Actor, ids.NewId(), clock.UtcNow);
+        Result archived = profile.Archive(
+            command.ExpectedVersion,
+            AccessProfileSubjectMappings.ToDomain(command.Actor),
+            ids.NewId(),
+            clock.UtcNow);
         return archived.IsFailure ? Result.Failure<Unit>(archived.Error) : Result.Success(Unit.Value);
     }
 }

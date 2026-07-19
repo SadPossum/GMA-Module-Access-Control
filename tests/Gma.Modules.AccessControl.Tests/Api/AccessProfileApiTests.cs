@@ -1,16 +1,20 @@
 namespace Gma.Modules.AccessControl.Tests;
 
+using System.Text.Json;
 using Gma.Framework.AccessControl;
 using Gma.Framework.AccessControl.AspNetCore;
 using Gma.Framework.Permissions;
 using Gma.Modules.AccessControl.Api;
 using Gma.Modules.AccessControl.Application;
+using Gma.Modules.AccessControl.Contracts;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 
 [Trait("Category", "Unit")]
 public sealed class AccessProfileApiTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public async Task Scope_resolver_accepts_only_non_global_profile_scopes()
     {
@@ -34,7 +38,7 @@ public sealed class AccessProfileApiTests
     }
 
     [Fact]
-    public void Api_mapping_exposes_stable_string_values_instead_of_domain_types()
+    public void Api_mapping_exposes_stable_contract_enum_wire_values()
     {
         AccessProfileDetails details = new(
             Guid.NewGuid(),
@@ -42,17 +46,19 @@ public sealed class AccessProfileApiTests
             "front-desk",
             "Front desk",
             string.Empty,
-            "active",
+            AccessProfileStatus.Active,
             3,
             ["reservations.read"],
             2,
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
 
-        Gma.Modules.AccessControl.Contracts.AccessProfileDto dto = AccessProfileApiMappings.ToDto(details);
+        AccessProfileDto dto = AccessProfileApiMappings.ToDto(details);
+        string json = JsonSerializer.Serialize(dto, JsonOptions);
 
         Assert.Equal("tenant:tenant-a", dto.OwnerScope);
-        Assert.Equal("active", dto.Status);
+        Assert.Equal(AccessProfileStatus.Active, dto.Status);
+        Assert.Contains("\"status\":\"active\"", json, StringComparison.Ordinal);
         Assert.Equal(["reservations.read"], dto.Permissions);
     }
 }

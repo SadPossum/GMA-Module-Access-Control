@@ -1,6 +1,5 @@
 namespace Gma.Modules.AccessControl.Domain.Aggregates;
 
-using Gma.Framework.AccessControl;
 using Gma.Framework.Domain.Models;
 using Gma.Framework.Permissions;
 using Gma.Framework.Results;
@@ -20,7 +19,6 @@ public sealed class AccessProfile : AggregateRoot<Guid>
     private AccessProfile(Guid id) : base(id) { }
 
     public string OwnerScopeValue { get; private set; } = string.Empty;
-    public AccessScope OwnerScope => AccessScope.Parse(this.OwnerScopeValue);
     public string Key { get; private set; } = string.Empty;
     public string DisplayName { get; private set; } = string.Empty;
     public string Description { get; private set; } = string.Empty;
@@ -37,23 +35,18 @@ public sealed class AccessProfile : AggregateRoot<Guid>
 
     public static Result<AccessProfile> Create(
         Guid id,
-        AccessScope? ownerScope,
+        string? ownerScopeValue,
         string key,
         string displayName,
         string? description,
         IReadOnlyCollection<string>? permissions,
-        AccessSubject? actor,
+        AccessProfileSubject? actor,
         Guid eventId,
         DateTimeOffset nowUtc)
     {
         if (id == Guid.Empty)
         {
             return Result.Failure<AccessProfile>(AccessProfileDomainErrors.IdRequired);
-        }
-
-        if (ownerScope is null || ownerScope.IsGlobal)
-        {
-            return Result.Failure<AccessProfile>(AccessProfileDomainErrors.ScopeRequired);
         }
 
         if (actor is null)
@@ -66,10 +59,12 @@ public sealed class AccessProfile : AggregateRoot<Guid>
             return Result.Failure<AccessProfile>(AccessProfileDomainErrors.EventIdRequired);
         }
 
+        Result<AccessProfileOwnerScope> ownerScope = AccessProfileOwnerScope.Create(ownerScopeValue);
         Result<AccessProfileKey> profileKey = AccessProfileKey.Create(key);
         Result<AccessProfileDisplayName> profileName = AccessProfileDisplayName.Create(displayName);
         Result<AccessProfileDescription> profileDescription = AccessProfileDescription.Create(description);
         Result<PermissionCode[]> normalizedPermissions = NormalizePermissions(permissions);
+        if (ownerScope.IsFailure) return Result.Failure<AccessProfile>(ownerScope.Error);
         if (profileKey.IsFailure) return Result.Failure<AccessProfile>(profileKey.Error);
         if (profileName.IsFailure) return Result.Failure<AccessProfile>(profileName.Error);
         if (profileDescription.IsFailure) return Result.Failure<AccessProfile>(profileDescription.Error);
@@ -77,7 +72,7 @@ public sealed class AccessProfile : AggregateRoot<Guid>
 
         AccessProfile profile = new(id)
         {
-            OwnerScopeValue = ownerScope.Value,
+            OwnerScopeValue = ownerScope.Value.Value,
             Key = profileKey.Value.Value,
             DisplayName = profileName.Value.Value,
             Description = profileDescription.Value.Value,
@@ -100,7 +95,7 @@ public sealed class AccessProfile : AggregateRoot<Guid>
         string? description,
         IReadOnlyCollection<string>? permissions,
         long expectedVersion,
-        AccessSubject? actor,
+        AccessProfileSubject? actor,
         Guid eventId,
         DateTimeOffset nowUtc)
     {
@@ -125,7 +120,7 @@ public sealed class AccessProfile : AggregateRoot<Guid>
 
     public Result Archive(
         long expectedVersion,
-        AccessSubject? actor,
+        AccessProfileSubject? actor,
         Guid eventId,
         DateTimeOffset nowUtc)
     {
@@ -147,8 +142,8 @@ public sealed class AccessProfile : AggregateRoot<Guid>
     public AccessProfileChange RecordAssignmentChange(
         Guid eventId,
         AccessProfileChangeKind kind,
-        AccessSubject actor,
-        AccessSubject subject,
+        AccessProfileSubject actor,
+        AccessProfileSubject subject,
         DateTimeOffset nowUtc)
     {
         if (eventId == Guid.Empty)
@@ -167,7 +162,7 @@ public sealed class AccessProfile : AggregateRoot<Guid>
         return change;
     }
 
-    private Result EnsureMutable(long expectedVersion, AccessSubject? actor, Guid eventId)
+    private Result EnsureMutable(long expectedVersion, AccessProfileSubject? actor, Guid eventId)
     {
         if (this.Status == AccessProfileStatus.Archived)
         {
@@ -189,7 +184,7 @@ public sealed class AccessProfile : AggregateRoot<Guid>
             : Result.Success();
     }
 
-    private void Advance(AccessSubject actor, DateTimeOffset nowUtc)
+    private void Advance(AccessProfileSubject actor, DateTimeOffset nowUtc)
     {
         this.Version++;
         this.LastChangedByKind = (int)actor.Kind;
