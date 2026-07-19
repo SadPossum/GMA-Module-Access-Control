@@ -37,7 +37,15 @@ public sealed class AccessControlRoleProvisionerTests
         await provisioner.EnsureAssignmentAsync(first, "workspace-manager", scope);
         await provisioner.EnsureAssignmentAsync(second, "workspace-manager", scope);
 
+        await provisioner.EnsureRoleAsync(new AccessControlRoleDefinition(
+            "workspace-manager",
+            ["properties.read"]));
+
         Assert.True(await provisioner.HasAssignmentAsync(first, "workspace-manager", scope));
+        Assert.True(await repository.RoleHasPermissionAsync(
+            "workspace-manager", "properties.read", CancellationToken.None));
+        Assert.False(await repository.RoleHasPermissionAsync(
+            "workspace-manager", "reservations.manage", CancellationToken.None));
         AccessControlPage<AccessControlRoleAssignment> firstPage = await provisioner.ListAssignmentsAsync(
             "workspace-manager",
             scope,

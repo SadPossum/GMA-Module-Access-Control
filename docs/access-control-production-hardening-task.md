@@ -33,6 +33,7 @@ The existing global role model remains the compatibility and operator surface. T
 ### 1. Contracts-Only Integration Boundary
 
 - add a narrow Contracts service for idempotent global role provisioning, assignment checks, scoped assignment discovery, and assignment removal;
+- reconcile declared compatibility-role permissions exactly so removing a seeded grant cannot leave stale authority;
 - implement the facade inside AccessControl and keep `IAccessControlRbacRepository` as an internal persistence port;
 - move owner wildcard and public role-management result concepts needed by consumers into Contracts;
 - align BunkFy extensions and host authorization code to the Contracts service;
@@ -121,6 +122,7 @@ No Framework change is planned. Existing access-control, permission-descriptor, 
 ## Acceptance Criteria
 
 - external product and extension code no longer references AccessControl Application repository ports;
+- compatibility-role reconciliation removes stale permissions while preserving final-owner protection;
 - two owning scopes can use the same profile key and display name without cross-scope reads, writes, assignments, or authorization;
 - profile permissions are explicitly allowlisted, never include owner wildcard, and cannot exceed the actor's authority;
 - archived profiles stop authorizing immediately and retain immutable change history;
@@ -144,4 +146,4 @@ No Framework change is planned. Existing access-control, permission-descriptor, 
 
 ## Current Verification
 
-The module implementation is present and remains in progress pending canonical Skeleton and BunkFy consumer alignment. Current local proof includes boundary checks, a zero-warning build, drift-free SQL Server and PostgreSQL migrations, 66 fast tests, a package vulnerability audit, and 5 real PostgreSQL integration tests. Exact publication commits and CI runs will be recorded after the consumer chain is green.
+The module implementation is present and remains in progress pending canonical Skeleton and BunkFy consumer alignment. Current local proof includes boundary checks, a zero-warning build, drift-free SQL Server and PostgreSQL migrations, 66 fast tests, a package vulnerability audit, and 6 real PostgreSQL integration tests. Exact publication commits and CI runs will be recorded after the consumer chain is green.

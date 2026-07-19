@@ -86,6 +86,38 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     }
 
     [DockerFact]
+    public async Task Compatibility_role_definition_removes_stale_permissions()
+    {
+        await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_role_reconciliation_tests");
+        await postgreSql.StartAsync();
+        string connectionString = postgreSql.GetConnectionString();
+        await MigrateAsync(connectionString);
+
+        await using (AccessControlDbContext writer = CreateDbContext(connectionString))
+        {
+            AccessControlRbacRepository repository = CreateRbacRepository(writer);
+            await repository.EnsureRoleDefinitionAsync(
+                "workspace-member",
+                ["properties.read", "reservations.manage"],
+                Now,
+                CancellationToken.None);
+            await repository.EnsureRoleDefinitionAsync(
+                "workspace-member",
+                ["properties.read"],
+                Now.AddMinutes(1),
+                CancellationToken.None);
+        }
+
+        await using AccessControlDbContext verification = CreateDbContext(connectionString);
+        Assert.Equal(
+            ["properties.read"],
+            await verification.RolePermissions
+                .OrderBy(permission => permission.PermissionCode)
+                .Select(permission => permission.PermissionCode)
+                .ToArrayAsync());
+    }
+
+    [DockerFact]
     public async Task Scoped_profile_authorization_is_one_query_and_archive_fails_closed()
     {
         await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_profile_authorization_tests");

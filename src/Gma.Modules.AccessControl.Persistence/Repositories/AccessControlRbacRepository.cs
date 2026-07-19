@@ -292,14 +292,48 @@ internal sealed class AccessControlRbacRepository(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(permissions);
+        string normalizedRoleName = AccessRole.NormalizeName(roleName);
+        string[] desiredPermissions = permissions
+            .Select(AccessControlPermissionGrant.Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
         return this.ExecuteManagementWriteAsync(
             async token =>
             {
-                await this.EnsureRoleAsync(roleName, createdAtUtc, token).ConfigureAwait(false);
-                foreach (string permission in permissions)
+                await this.EnsureRoleAsync(normalizedRoleName, createdAtUtc, token).ConfigureAwait(false);
+                AccessRole role = await this.GetRoleAsync(normalizedRoleName, token).ConfigureAwait(false);
+                string[] currentPermissions = await dbContext.RolePermissions
+                    .Where(permission => permission.RoleId == role.Id)
+                    .Select(permission => permission.PermissionCode)
+                    .ToArrayAsync(token)
+                    .ConfigureAwait(false);
+
+                foreach (string permission in currentPermissions.Except(
+                             desiredPermissions,
+                             StringComparer.Ordinal))
                 {
-                    await this.EnsureRolePermissionAsync(roleName, permission, createdAtUtc, token)
+                    AccessControlRemovalOutcome outcome = await this.RevokeRolePermissionCoreAsync(
+                            normalizedRoleName,
+                            permission,
+                            token)
                         .ConfigureAwait(false);
+                    if (outcome == AccessControlRemovalOutcome.LastOwnerProtected)
+                    {
+                        throw new InvalidOperationException(
+                            "AccessControl protected the final owner role definition.");
+                    }
+                }
+
+                foreach (string permission in desiredPermissions.Except(
+                             currentPermissions,
+                             StringComparer.Ordinal))
+                {
+                    dbContext.RolePermissions.Add(new AccessRolePermission(
+                        idGenerator.NewId(),
+                        role.Id,
+                        permission,
+                        createdAtUtc));
                 }
             },
             cancellationToken);

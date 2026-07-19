@@ -60,6 +60,7 @@ await provisioner.EnsureAssignmentAsync(
 ```
 
 Do not consume `IAccessControlRbacRepository` outside AccessControl. It is a persistence-shaped Application port, not a module contract.
+Compatibility-role definitions supplied through the Contracts facade are reconciled exactly, so removing a seeded permission removes the persisted grant. Final-owner protection still rejects an unsafe wildcard removal.
 
 Admin hosts compose the AccessControl admin front door explicitly:
 
