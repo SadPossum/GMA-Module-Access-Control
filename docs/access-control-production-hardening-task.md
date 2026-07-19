@@ -1,6 +1,6 @@
 # AccessControl Production Hardening Task
 
-Status: in progress
+Status: complete
 Date: 2026-07-19
 
 ## Goal
@@ -146,4 +146,12 @@ No Framework change is planned. Existing access-control, permission-descriptor, 
 
 ## Current Verification
 
-The module implementation is present and remains in progress pending canonical Skeleton and BunkFy consumer alignment. Current local proof includes boundary checks, a zero-warning build, drift-free SQL Server and PostgreSQL migrations, 66 fast tests, a package vulnerability audit, and 6 real PostgreSQL integration tests. Exact publication commits and CI runs will be recorded after the consumer chain is green.
+The production-hardening slice is complete and published through the canonical consumer chain:
+
+- AccessControl `43b0f419d5803fd4146cd00d6bb0e7056cbae9be`: boundary checks, zero-warning build, drift-free SQL Server and PostgreSQL migrations, 66 fast tests, package vulnerability audit, and 6 real PostgreSQL integration tests; CI run `29680340936` passed;
+- GMA Skeleton `619e748a3bce1a116a8bfec27bb09b3a8a386c3d`: canonical API composition, deny-by-default allowlist coverage, 263 architecture tests, and 16 integration/framework/module tests; CI run `29680540351` passed on Ubuntu and Windows;
+- BunkFy backend `6c746ea1cee973a26b91cca37f05c43ac1215a05`: Contracts-only consumers, explicit delegation allowlist, architecture guards, 48 architecture tests, 19 integration tests, all fast tests, and 32 Docker tests; validation run `29681178978` and Docker run `29681178956` passed;
+- BunkFy web `287499a509de3ed73b223f2a762934e63797886b`: generated AccessControl OpenAPI snapshot and TypeScript contracts; CI run `29682049875` passed;
+- BunkFy root `52fb995f2a272eddd7a1a6a5919c6487b486ed20`: exact published submodule graph, generated workspace, backend verification, contract drift, frontend tests, and production build; CI run `29682081816` passed.
+
+No GMA Extensions change was required because no cross-module extension consumed the AccessControl Application repository port. Product role-management UI and invitation-time profile selection remain explicitly deferred to BunkFy product slices.
