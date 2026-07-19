@@ -31,6 +31,7 @@ public sealed class AccessControlRegistrationTests
 
         services.AddAccessControlApplication(configuration);
         services.AddAccessControlApplication(configuration);
+        services.AddAccessProfilePermissionAllowlist(["reservations.read", "reservations.read"]);
 
         Assert.Single(services, HasService<IValidateOptions<AccessControlOptions>, AccessControlOptionsValidator>());
         Assert.Single(services, HasService<ICommandHandler<BootstrapOwnerCommand, Unit>, BootstrapOwnerCommandHandler>());
@@ -42,7 +43,16 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(services, HasService<ICommandValidator<RevokeRolePermissionCommand>, RevokeRolePermissionCommandValidator>());
         Assert.Single(services, HasService<ICommandHandler<UnassignRoleCommand, Unit>, UnassignRoleCommandHandler>());
         Assert.Single(services, HasService<ICommandHandler<RevokeRolePermissionCommand, Unit>, RevokeRolePermissionCommandHandler>());
-        Assert.Single(services, HasService<IQueryHandler<ListRoleAssignmentsQuery, IReadOnlyList<AccessControlRoleAssignmentDetails>>, ListRoleAssignmentsQueryHandler>());
+        Assert.Single(services, HasService<IQueryHandler<ListRoleAssignmentsQuery, AccessControlPage<AccessControlRoleAssignmentDetails>>, ListRoleAssignmentsQueryHandler>());
+        Assert.Single(services, HasService<IAccessControlRoleProvisioner, AccessControlRoleProvisioner>());
+        Assert.Single(services, HasService<ICommandHandler<CreateAccessProfileCommand, AccessProfileDetails>, CreateAccessProfileCommandHandler>());
+        Assert.Single(services, HasService<ICommandValidator<CreateAccessProfileCommand>, CreateAccessProfileCommandValidator>());
+        Assert.Single(services, HasService<ICommandValidator<UpdateAccessProfileCommand>, UpdateAccessProfileCommandValidator>());
+        Assert.Single(services, HasService<ICommandValidator<ArchiveAccessProfileCommand>, ArchiveAccessProfileCommandValidator>());
+        Assert.Single(services, HasService<ICommandValidator<AssignAccessProfileCommand>, AssignAccessProfileCommandValidator>());
+        Assert.Single(services, HasService<ICommandValidator<UnassignAccessProfileCommand>, UnassignAccessProfileCommandValidator>());
+        Assert.Single(services, HasService<ICommandHandler<AssignAccessProfileCommand, AccessProfileAssignmentDetails>, AssignAccessProfileCommandHandler>());
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(AccessProfileAllowedPermission));
         Assert.Single(services, HasService<IAccessDecisionProvider, PersistedAccessControlDecisionProvider>());
         Assert.Single(services, HasService<IAccessGrantScopeReader, PersistedAccessGrantScopeReader>());
         Assert.Single(services, descriptor => descriptor.ServiceType.Name == "AccessControlOptionsRegistrationMarker");
@@ -90,6 +100,7 @@ public sealed class AccessControlRegistrationTests
 
         Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(AccessControlDbContext));
         Assert.Single(builder.Services, HasService<IAccessControlRbacRepository, AccessControlRbacRepository>());
+        Assert.Single(builder.Services, HasService<IAccessProfileRepository, AccessProfileRepository>());
         Assert.Single(builder.Services, HasService<IUnitOfWork, AccessControlUnitOfWork>());
         Assert.Single(builder.Services, HasService<IInboxStore, AccessControlInboxStore>());
     }

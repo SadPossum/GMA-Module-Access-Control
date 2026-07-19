@@ -88,6 +88,166 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("inbox_messages", "access");
                 });
 
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Aggregates.AccessProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("CreatedByKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("LastChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastChangedById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("LastChangedByKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("OwnerScopeValue")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("OwnerScope");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerScopeValue", "Key")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerScopeValue", "Status", "Key");
+
+                    b.ToTable("access_profiles", "access");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Entities.AccessProfileAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedById")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("CreatedByKind")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("SubjectKind")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileId", "SubjectKind", "SubjectId")
+                        .IsUnique();
+
+                    b.HasIndex("SubjectKind", "SubjectId", "ProfileId");
+
+                    b.ToTable("access_profile_assignments", "access");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Entities.AccessProfileChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("ActorKind")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("ProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SubjectId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int?>("SubjectKind")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileId", "OccurredAtUtc", "Id");
+
+                    b.ToTable("access_profile_changes", "access");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Entities.AccessProfilePermission", b =>
+                {
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PermissionCode")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ProfileId", "PermissionCode");
+
+                    b.HasIndex("PermissionCode");
+
+                    b.ToTable("access_profile_permissions", "access");
+                });
+
             modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessBootstrapState", b =>
                 {
                     b.Property<int>("Id")
@@ -220,6 +380,45 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
                     b.ToTable("subject_role_assignments", "access");
                 });
 
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Entities.AccessProfileAssignment", b =>
+                {
+                    b.HasOne("Gma.Modules.AccessControl.Domain.Aggregates.AccessProfile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Gma.Modules.AccessControl.Persistence.Entities.AccessPrincipal", null)
+                        .WithMany()
+                        .HasForeignKey("SubjectKind", "SubjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Entities.AccessProfileChange", b =>
+                {
+                    b.HasOne("Gma.Modules.AccessControl.Domain.Aggregates.AccessProfile", "Profile")
+                        .WithMany("Changes")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Entities.AccessProfilePermission", b =>
+                {
+                    b.HasOne("Gma.Modules.AccessControl.Domain.Aggregates.AccessProfile", "Profile")
+                        .WithMany("Permissions")
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
+                });
+
             modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessRolePermission", b =>
                 {
                     b.HasOne("Gma.Modules.AccessControl.Persistence.Entities.AccessRole", "Role")
@@ -246,6 +445,13 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Domain.Aggregates.AccessProfile", b =>
+                {
+                    b.Navigation("Changes");
+
+                    b.Navigation("Permissions");
                 });
 
             modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessRole", b =>

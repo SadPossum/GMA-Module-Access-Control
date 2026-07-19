@@ -19,6 +19,7 @@ using Gma.Framework.Api.Observability;
 using Gma.Framework.Api.Results;
 using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
+using Gma.Framework.Pagination;
 using Gma.Framework.Results;
 
 public sealed class AccessControlAdminApiModule : IAdminApiModule
@@ -43,6 +44,8 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
         RouteGroupBuilder roles = group.MapGroup("/roles");
 
         roles.MapGet("/", async (
+            int? page,
+            int? pageSize,
             HttpContext httpContext,
             AdminApiExecutor executor,
             IRequestDispatcher dispatcher,
@@ -51,7 +54,9 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
                 httpContext,
                 AdminOperation.Create(AccessControlAdminOperationNames.RolesList, AccessControlAdminPermissions.RolesRead),
                 requireTenant: false,
-                token => dispatcher.QueryAsync(new ListRolesQuery(), token),
+                token => dispatcher.QueryAsync(new ListRolesQuery(
+                    page ?? PageRequest.DefaultPage,
+                    pageSize ?? PageRequest.DefaultPageSize), token),
                 cancellationToken).ConfigureAwait(false));
 
         roles.MapPost("/", async (
@@ -115,6 +120,8 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
 
         roles.MapGet("/{roleName}/assignments", async (
             string roleName,
+            int? page,
+            int? pageSize,
             HttpContext httpContext,
             AdminApiExecutor executor,
             IRequestDispatcher dispatcher,
@@ -123,7 +130,11 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
                 httpContext,
                 AdminOperation.Create(AccessControlAdminOperationNames.RoleAssignmentsList, AccessControlAdminPermissions.RolesRead),
                 requireTenant: false,
-                token => ListRoleAssignmentsAsync(dispatcher, roleName, token),
+                token => ListRoleAssignmentsAsync(
+                    dispatcher, roleName,
+                    page ?? PageRequest.DefaultPage,
+                    pageSize ?? PageRequest.DefaultPageSize,
+                    token),
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false));
 
@@ -231,18 +242,20 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
             cancellationToken);
     }
 
-    private static async Task<Result<IReadOnlyList<AccessRoleAssignmentApiResponse>>> ListRoleAssignmentsAsync(
+    private static async Task<Result<AccessControlPage<AccessRoleAssignmentApiResponse>>> ListRoleAssignmentsAsync(
         IRequestDispatcher dispatcher,
         string roleName,
+        int page,
+        int pageSize,
         CancellationToken cancellationToken)
     {
-        Result<IReadOnlyList<AccessControlRoleAssignmentDetails>> result = await dispatcher
-            .QueryAsync(new ListRoleAssignmentsQuery(roleName), cancellationToken)
+        Result<AccessControlPage<AccessControlRoleAssignmentDetails>> result = await dispatcher
+            .QueryAsync(new ListRoleAssignmentsQuery(roleName, page, pageSize), cancellationToken)
             .ConfigureAwait(false);
 
         return result.IsFailure
-            ? Result.Failure<IReadOnlyList<AccessRoleAssignmentApiResponse>>(result.Error)
-            : Result.Success<IReadOnlyList<AccessRoleAssignmentApiResponse>>(result.Value
+            ? Result.Failure<AccessControlPage<AccessRoleAssignmentApiResponse>>(result.Error)
+            : Result.Success(new AccessControlPage<AccessRoleAssignmentApiResponse>(result.Value.Items
                 .Select(assignment => new AccessRoleAssignmentApiResponse(
                     assignment.Id,
                     AccessSubjectKindNames.GetName(assignment.SubjectKind),
@@ -250,7 +263,7 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
                     assignment.RoleName,
                     assignment.AccessScope,
                     assignment.CreatedAtUtc))
-                .ToArray());
+                .ToArray(), result.Value.Page, result.Value.PageSize, result.Value.HasMore));
     }
 
     private static bool TryParseScope(string? value, out AccessScope? scope)

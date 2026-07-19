@@ -15,6 +15,7 @@ using Gma.Framework.Administration.AccessControl;
 using Gma.Framework.Administration.Cli;
 using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
+using Gma.Framework.Pagination;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Framework.Results;
@@ -424,9 +425,13 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
             Description = "Role name.",
             Required = true
         };
+        Option<int> pageOption = PageOption();
+        Option<int> pageSizeOption = PageSizeOption();
         Command command = new("assignments", "List assignments for a role.")
         {
-            roleOption
+            roleOption,
+            pageOption,
+            pageSizeOption
         };
         command.SetAction((parseResult, cancellationToken) =>
         {
@@ -440,14 +445,17 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                 async (provider, token) =>
                 {
                     IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
-                    Result<IReadOnlyList<AccessControlRoleAssignmentDetails>> result = await dispatcher
-                        .QueryAsync(new ListRoleAssignmentsQuery(parseResult.GetRequiredValue(roleOption)), token)
+                    Result<AccessControlPage<AccessControlRoleAssignmentDetails>> result = await dispatcher
+                        .QueryAsync(new ListRoleAssignmentsQuery(
+                            parseResult.GetRequiredValue(roleOption),
+                            parseResult.GetValue(pageOption),
+                            parseResult.GetValue(pageSizeOption)), token)
                         .ConfigureAwait(false);
 
                     if (result.IsSuccess)
                     {
                         AdminCliOutput.WriteRows(
-                            result.Value,
+                            result.Value.Items,
                             parseResult.GetValue(globalOptions.OutputOption) ?? AdminCliOutput.Table,
                             [
                                 ("Subject kind", assignment => AccessSubjectKindNames.GetName(assignment.SubjectKind)),
@@ -468,7 +476,13 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
 
     private static Command CreateRoleListCommand(IServiceProvider services, AdminCliGlobalOptions globalOptions)
     {
-        Command command = new("list", "List access-control roles.");
+        Option<int> pageOption = PageOption();
+        Option<int> pageSizeOption = PageSizeOption();
+        Command command = new("list", "List access-control roles.")
+        {
+            pageOption,
+            pageSizeOption
+        };
         command.SetAction((parseResult, cancellationToken) =>
         {
             AdminCliExecutor executor = services.GetRequiredService<AdminCliExecutor>();
@@ -481,13 +495,14 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                 async (provider, token) =>
                 {
                     IRequestDispatcher dispatcher = provider.GetRequiredService<IRequestDispatcher>();
-                    Result<IReadOnlyList<AccessControlRoleDetails>> result = await dispatcher.QueryAsync(new ListRolesQuery(), token)
+                    Result<AccessControlPage<AccessControlRoleDetails>> result = await dispatcher.QueryAsync(
+                        new ListRolesQuery(parseResult.GetValue(pageOption), parseResult.GetValue(pageSizeOption)), token)
                         .ConfigureAwait(false);
 
                     if (result.IsSuccess)
                     {
                         AdminCliOutput.WriteRows(
-                            result.Value,
+                            result.Value.Items,
                             parseResult.GetValue(globalOptions.OutputOption) ?? AdminCliOutput.Table,
                             [
                                 ("Name", role => role.Name),
@@ -503,6 +518,18 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
 
         return command;
     }
+
+    private static Option<int> PageOption() => new("--page")
+    {
+        Description = "Page number.",
+        DefaultValueFactory = _ => PageRequest.DefaultPage
+    };
+
+    private static Option<int> PageSizeOption() => new("--page-size")
+    {
+        Description = "Page size.",
+        DefaultValueFactory = _ => PageRequest.DefaultPageSize
+    };
 
     private static async Task RecordBootstrapAuditAsync(
         IAdminAuditSink auditSink,

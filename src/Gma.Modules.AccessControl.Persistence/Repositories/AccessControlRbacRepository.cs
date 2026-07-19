@@ -2,11 +2,15 @@ namespace Gma.Modules.AccessControl.Persistence.Repositories;
 
 using Gma.Framework.AccessControl;
 using Gma.Framework.Permissions;
+using Gma.Framework.Pagination;
 using Gma.Framework.Runtime.Identity;
 using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Persistence.Entities;
+using Gma.Modules.AccessControl.Contracts;
+using Gma.Modules.AccessControl.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Data;
 
 internal sealed class AccessControlRbacRepository(
@@ -47,44 +51,53 @@ internal sealed class AccessControlRbacRepository(
             return true;
         }
 
-        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await dbContext.Database
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!allowWhenAssignmentsExist)
+        try
         {
-            int claimed = await dbContext.BootstrapState
-                .Where(state => state.Id == AccessBootstrapState.SingletonId && state.ClaimedBy == null)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(state => state.ClaimedBy, subject.Id)
-                    .SetProperty(state => state.ClaimedAtUtc, createdAtUtc), cancellationToken)
+            await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await dbContext.Database
+                .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
                 .ConfigureAwait(false);
-            if (claimed == 0)
+
+            if (!allowWhenAssignmentsExist)
             {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return false;
+                int claimed = await dbContext.BootstrapState
+                    .Where(state => state.Id == AccessBootstrapState.SingletonId && state.ClaimedBy == null)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(state => state.ClaimedBy, subject.Id)
+                        .SetProperty(state => state.ClaimedAtUtc, createdAtUtc), cancellationToken)
+                    .ConfigureAwait(false);
+                if (claimed == 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return false;
+                }
             }
+
+            await this.EnsureSubjectAsync(subject, createdAtUtc, cancellationToken).ConfigureAwait(false);
+            await this.EnsureRoleAsync(normalizedRoleName, createdAtUtc, cancellationToken).ConfigureAwait(false);
+            await this.EnsureRolePermissionAsync(
+                    normalizedRoleName,
+                    AccessControlPermissionGrant.OwnerWildcard,
+                    createdAtUtc,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await this.EnsureRoleAssignmentAsync(
+                    subject,
+                    normalizedRoleName,
+                    AccessScope.Global,
+                    createdAtUtc,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return true;
         }
-
-        await this.EnsureSubjectAsync(subject, createdAtUtc, cancellationToken).ConfigureAwait(false);
-        await this.EnsureRoleAsync(normalizedRoleName, createdAtUtc, cancellationToken).ConfigureAwait(false);
-        await this.EnsureRolePermissionAsync(
-                normalizedRoleName,
-                AccessControlPermissionGrant.OwnerWildcard,
-                createdAtUtc,
-                cancellationToken)
-            .ConfigureAwait(false);
-        await this.EnsureRoleAssignmentAsync(
-                subject,
-                normalizedRoleName,
-                AccessScope.Global,
-                createdAtUtc,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return true;
+        catch (Exception exception) when (
+            !allowWhenAssignmentsExist && IsPostgreSqlSerializationFailure(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            return false;
+        }
     }
 
     public Task<bool> RoleExistsAsync(string roleName, CancellationToken cancellationToken)
@@ -271,6 +284,45 @@ internal sealed class AccessControlRbacRepository(
         await this.AssignRoleAsync(subject, roleName, scope, createdAtUtc, cancellationToken).ConfigureAwait(false);
     }
 
+    public Task EnsureRoleDefinitionAsync(
+        string roleName,
+        IReadOnlyCollection<string> permissions,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(permissions);
+        return this.ExecuteManagementWriteAsync(
+            async token =>
+            {
+                await this.EnsureRoleAsync(roleName, createdAtUtc, token).ConfigureAwait(false);
+                foreach (string permission in permissions)
+                {
+                    await this.EnsureRolePermissionAsync(roleName, permission, createdAtUtc, token)
+                        .ConfigureAwait(false);
+                }
+            },
+            cancellationToken);
+    }
+
+    public Task EnsureRoleAssignmentProvisionedAsync(
+        AccessSubject subject,
+        string roleName,
+        AccessScope scope,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(scope);
+        return this.ExecuteManagementWriteAsync(
+            async token =>
+            {
+                await this.EnsureSubjectAsync(subject, createdAtUtc, token).ConfigureAwait(false);
+                await this.EnsureRoleAssignmentAsync(subject, roleName, scope, createdAtUtc, token)
+                    .ConfigureAwait(false);
+            },
+            cancellationToken);
+    }
+
     public Task<AccessControlRoleDetails> CreateRoleAsync(
         string roleName,
         DateTimeOffset createdAtUtc,
@@ -362,6 +414,31 @@ internal sealed class AccessControlRbacRepository(
             .ConfigureAwait(false);
     }
 
+    public async Task<AccessControlPage<AccessControlRoleDetails>> ListRolesPageAsync(
+        PageRequest pageRequest,
+        CancellationToken cancellationToken)
+    {
+        AccessControlRoleDetails[] rows = await dbContext.Roles
+            .AsNoTracking()
+            .OrderBy(role => role.Name)
+            .ThenBy(role => role.Id)
+            .Skip(pageRequest.SkipCount)
+            .Take(pageRequest.PageSize + 1)
+            .Select(role => new AccessControlRoleDetails(
+                role.Id,
+                role.Name,
+                role.Permissions.OrderBy(permission => permission.PermissionCode)
+                    .Select(permission => permission.PermissionCode).ToArray(),
+                role.Assignments.Count))
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return new AccessControlPage<AccessControlRoleDetails>(
+            rows.Take(pageRequest.PageSize).ToArray(),
+            pageRequest.Page,
+            pageRequest.PageSize,
+            rows.Length > pageRequest.PageSize);
+    }
+
     public async Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(
         string roleName,
         CancellationToken cancellationToken) =>
@@ -374,6 +451,86 @@ internal sealed class AccessControlRbacRepository(
     {
         ArgumentNullException.ThrowIfNull(scope);
         return await this.ListRoleAssignmentsAsync(roleName, scope.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AccessControlPage<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsPageAsync(
+        string roleName,
+        AccessScope scope,
+        PageRequest pageRequest,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        string normalizedRoleName = AccessRole.NormalizeName(roleName);
+        AccessControlRoleAssignmentProjection[] rows = await dbContext.SubjectRoleAssignments
+            .AsNoTracking()
+            .Where(assignment =>
+                assignment.Role != null &&
+                assignment.Role.Name == normalizedRoleName &&
+                assignment.ScopeValue == scope.Value)
+            .OrderBy(assignment => assignment.SubjectKind)
+            .ThenBy(assignment => assignment.SubjectId)
+            .ThenBy(assignment => assignment.Id)
+            .Skip(pageRequest.SkipCount)
+            .Take(pageRequest.PageSize + 1)
+            .Select(assignment => new AccessControlRoleAssignmentProjection(
+                assignment.Id,
+                assignment.SubjectKind,
+                assignment.SubjectId,
+                normalizedRoleName,
+                assignment.ScopeValue,
+                assignment.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        bool hasMore = rows.Length > pageRequest.PageSize;
+        AccessControlRoleAssignmentDetails[] items = rows
+            .Take(pageRequest.PageSize)
+            .Select(assignment => new AccessControlRoleAssignmentDetails(
+                assignment.Id,
+                ToSubjectKind(assignment.SubjectKind),
+                assignment.SubjectId,
+                assignment.RoleName,
+                AccessScope.Parse(assignment.ScopeValue),
+                assignment.CreatedAtUtc))
+            .ToArray();
+        return new AccessControlPage<AccessControlRoleAssignmentDetails>(
+            items,
+            pageRequest.Page,
+            pageRequest.PageSize,
+            hasMore);
+    }
+
+    public async Task<AccessControlPage<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsPageAsync(
+        string roleName,
+        PageRequest pageRequest,
+        CancellationToken cancellationToken)
+    {
+        string normalizedRoleName = AccessRole.NormalizeName(roleName);
+        AccessControlRoleAssignmentProjection[] rows = await dbContext.SubjectRoleAssignments
+            .AsNoTracking()
+            .Where(assignment => assignment.Role != null && assignment.Role.Name == normalizedRoleName)
+            .OrderBy(assignment => assignment.SubjectKind)
+            .ThenBy(assignment => assignment.SubjectId)
+            .ThenBy(assignment => assignment.ScopeValue)
+            .ThenBy(assignment => assignment.Id)
+            .Skip(pageRequest.SkipCount)
+            .Take(pageRequest.PageSize + 1)
+            .Select(assignment => new AccessControlRoleAssignmentProjection(
+                assignment.Id,
+                assignment.SubjectKind,
+                assignment.SubjectId,
+                normalizedRoleName,
+                assignment.ScopeValue,
+                assignment.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        AccessControlRoleAssignmentDetails[] items = rows.Take(pageRequest.PageSize)
+            .Select(assignment => new AccessControlRoleAssignmentDetails(
+                assignment.Id, ToSubjectKind(assignment.SubjectKind), assignment.SubjectId,
+                assignment.RoleName, AccessScope.Parse(assignment.ScopeValue), assignment.CreatedAtUtc))
+            .ToArray();
+        return new AccessControlPage<AccessControlRoleAssignmentDetails>(
+            items, pageRequest.Page, pageRequest.PageSize, rows.Length > pageRequest.PageSize);
     }
 
     private async Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(
@@ -453,16 +610,51 @@ internal sealed class AccessControlRbacRepository(
             .AsNoTracking()
             .Where(permissionGrant => candidatePermissionCodes.Contains(permissionGrant.PermissionCode));
 
-        return assignments
+        IQueryable<PersistedPermissionGrant> roleGrants = assignments
             .Join(
                 permissionGrants,
                 assignment => assignment.RoleId,
                 permissionGrant => permissionGrant.RoleId,
-                (assignment, permissionGrant) => new PersistedPermissionGrant(
-                    assignment.SubjectKind,
-                    assignment.SubjectId,
-                    assignment.ScopeValue,
-                    permissionGrant.PermissionCode));
+                (assignment, permissionGrant) => new PersistedPermissionGrant
+                {
+                    SubjectKind = assignment.SubjectKind,
+                    SubjectId = assignment.SubjectId,
+                    ScopeValue = assignment.ScopeValue,
+                    PermissionCode = permissionGrant.PermissionCode
+                });
+
+        IQueryable<Gma.Modules.AccessControl.Domain.Entities.AccessProfileAssignment> profileAssignments =
+            dbContext.AccessProfileAssignments
+                .AsNoTracking()
+                .Where(assignment =>
+                    assignment.SubjectKind == subjectKind &&
+                    assignment.SubjectId == subject.Id &&
+                    assignment.Profile != null &&
+                    assignment.Profile.Status == AccessProfileStatus.Active);
+        if (candidateScopeValues is not null)
+        {
+            profileAssignments = profileAssignments.Where(assignment =>
+                assignment.Profile != null &&
+                candidateScopeValues.Contains(assignment.Profile.OwnerScopeValue));
+        }
+
+        IQueryable<Gma.Modules.AccessControl.Domain.Entities.AccessProfilePermission> profilePermissions =
+            dbContext.AccessProfilePermissions
+                .AsNoTracking()
+                .Where(permissionGrant => permissionGrant.PermissionCode == permission.Value);
+        IQueryable<PersistedPermissionGrant> profileGrants = profileAssignments.Join(
+            profilePermissions,
+            assignment => assignment.ProfileId,
+            permissionGrant => permissionGrant.ProfileId,
+            (assignment, permissionGrant) => new PersistedPermissionGrant
+            {
+                SubjectKind = assignment.SubjectKind,
+                SubjectId = assignment.SubjectId,
+                ScopeValue = assignment.Profile!.OwnerScopeValue,
+                PermissionCode = permissionGrant.PermissionCode
+            });
+
+        return roleGrants.Concat(profileGrants);
     }
 
     private async Task<AccessControlRemovalOutcome> RevokeRolePermissionCoreAsync(
@@ -637,6 +829,50 @@ internal sealed class AccessControlRbacRepository(
         return outcome;
     }
 
+    private async Task ExecuteManagementWriteAsync(
+        Func<CancellationToken, Task> mutate,
+        CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational())
+        {
+            await mutate(cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (dbContext.Database.CurrentTransaction is not null)
+        {
+            await this.AcquireManagementLockAsync(cancellationToken).ConfigureAwait(false);
+            await mutate(cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction = await dbContext.Database
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            .ConfigureAwait(false);
+        await this.AcquireManagementLockAsync(cancellationToken).ConfigureAwait(false);
+        await mutate(cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task AcquireManagementLockAsync(CancellationToken cancellationToken)
+    {
+        int managementLockAcquired = await dbContext.BootstrapState
+            .Where(state => state.Id == AccessBootstrapState.SingletonId)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(
+                    state => state.ManagementRevision,
+                    state => state.ManagementRevision + 1),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (managementLockAcquired != 1)
+        {
+            throw new InvalidOperationException("The access-control management safety lock is unavailable.");
+        }
+    }
+
     private static AccessGrantScope ToAccessGrantScope(
         PersistedPermissionGrant grant,
         AccessScopeMatchOptions permissionMatchOptions) =>
@@ -673,6 +909,20 @@ internal sealed class AccessControlRbacRepository(
         return (int)subject.Kind;
     }
 
+    private static bool IsPostgreSqlSerializationFailure(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException postgres &&
+                string.Equals(postgres.SqlState, PostgresErrorCodes.SerializationFailure, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static AccessSubjectKind ToSubjectKind(int persistedKind)
     {
         AccessSubjectKind kind = (AccessSubjectKind)persistedKind;
@@ -684,12 +934,12 @@ internal sealed class AccessControlRbacRepository(
         return kind;
     }
 
-    private sealed record PersistedPermissionGrant(
-        int SubjectKind,
-        string SubjectId,
-        string ScopeValue,
-        string PermissionCode)
+    private sealed class PersistedPermissionGrant
     {
+        public int SubjectKind { get; init; }
+        public string SubjectId { get; init; } = string.Empty;
+        public string ScopeValue { get; init; } = string.Empty;
+        public string PermissionCode { get; init; } = string.Empty;
         public AccessScope Scope => AccessScope.Parse(this.ScopeValue);
     }
 

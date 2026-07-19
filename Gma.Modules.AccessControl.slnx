@@ -1,9 +1,13 @@
 <Solution>
   <Folder Name="/docs/">
     <File Path="docs/README.md" />
+    <File Path="docs/access-control-production-hardening-task.md" />
   </Folder>
   <Folder Name="/eng/">
     <File Path="eng/bootstrap-source-roots.ps1" />
+    <File Path="eng/check-boundaries.ps1" />
+    <File Path="eng/check-migrations.ps1" />
+    <File Path="eng/verify.ps1" />
   </Folder>
   <Folder Name="/.github/workflows/">
     <File Path=".github/workflows/validate.yml" />
@@ -31,12 +35,19 @@
   <Folder Name="/src/Contracts/">
     <Project Path="src/Gma.Modules.AccessControl.Contracts/Gma.Modules.AccessControl.Contracts.csproj" />
   </Folder>
+  <Folder Name="/src/Api/">
+    <Project Path="src/Gma.Modules.AccessControl.Api/Gma.Modules.AccessControl.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Domain/">
+    <Project Path="src/Gma.Modules.AccessControl.Domain/Gma.Modules.AccessControl.Domain.csproj" />
+  </Folder>
   <Folder Name="/src/Persistence/">
     <Project Path="src/Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations/Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.csproj" />
     <Project Path="src/Gma.Modules.AccessControl.Persistence.SqlServerMigrations/Gma.Modules.AccessControl.Persistence.SqlServerMigrations.csproj" />
     <Project Path="src/Gma.Modules.AccessControl.Persistence/Gma.Modules.AccessControl.Persistence.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Gma.Modules.AccessControl.IntegrationTests/Gma.Modules.AccessControl.IntegrationTests.csproj" />
     <Project Path="tests/Gma.Modules.AccessControl.Tests/Gma.Modules.AccessControl.Tests.csproj" />
   </Folder>
 </Solution>

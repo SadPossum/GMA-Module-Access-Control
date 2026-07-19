@@ -19,6 +19,9 @@ public static class AccessControlModuleMetadata
             new ModulePermissionDescriptor(AccessControlAdminPermissionCodes.Bootstrap, "Bootstrap the first access-control owner.", scopeRequirement: PermissionScopeRequirement.Global),
             new ModulePermissionDescriptor(AccessControlAdminPermissionCodes.RolesRead, "Read access-control roles.", scopeRequirement: PermissionScopeRequirement.Global),
             new ModulePermissionDescriptor(AccessControlAdminPermissionCodes.RolesManage, "Manage access-control roles and assignments.", scopeRequirement: PermissionScopeRequirement.Global),
+            new ModulePermissionDescriptor(AccessControlProfilePermissionCodes.Read, "Read scoped access profiles and assignments.", PermissionScopeRequirement.Scoped, PermissionScopeGrantPolicy.Descendants),
+            new ModulePermissionDescriptor(AccessControlProfilePermissionCodes.Manage, "Create, update, and archive scoped access profiles.", PermissionScopeRequirement.Scoped, PermissionScopeGrantPolicy.Descendants),
+            new ModulePermissionDescriptor(AccessControlProfilePermissionCodes.Assign, "Assign scoped access profiles to subjects.", PermissionScopeRequirement.Scoped, PermissionScopeGrantPolicy.Descendants),
         ])
         .Build();
 }
