@@ -56,6 +56,8 @@ public static class DependencyInjection
         services.TryAddScoped<PersistedAccessControlDecisionProvider>();
         services.TryAddScoped<IAccessControlRoleProvisioner, AccessControlRoleProvisioner>();
         services.TryAddScoped<AccessProfilePermissionPolicy>();
+        services.TryAddScoped<AccessProfileAssignmentPolicy>();
+        services.TryAddScoped<IAccessProfileAssignmentRevoker, AccessProfileAssignmentRevoker>();
         services.TryAddScoped<IAccessGrantScopeReader, PersistedAccessGrantScopeReader>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IAccessDecisionProvider, PersistedAccessControlDecisionProvider>());
         services.AddApplicationServicesFromAssembly(typeof(DependencyInjection).Assembly);

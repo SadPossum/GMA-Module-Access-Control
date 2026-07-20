@@ -14,6 +14,7 @@ internal sealed class AssignAccessProfileCommandHandler(
     IAccessProfileRepository profiles,
     IAccessControlRbacRepository rbac,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessProfileAssignmentPolicy assignmentPolicy,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<AssignAccessProfileCommand, AccessProfileAssignmentDetails>
 {
@@ -38,6 +39,18 @@ internal sealed class AssignAccessProfileCommandHandler(
         if (delegation.IsFailure)
         {
             return Result.Failure<AccessProfileAssignmentDetails>(delegation.Error);
+        }
+
+        if (!await assignmentPolicy.IsAllowedAsync(
+                profile,
+                command.OwnerScope,
+                command.Actor,
+                command.Subject,
+                cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return Result.Failure<AccessProfileAssignmentDetails>(
+                AccessControlApplicationErrors.ProfileAssignmentRejected);
         }
 
         if (await profiles.AssignmentExistsAsync(profile.Id, command.Subject, cancellationToken).ConfigureAwait(false))

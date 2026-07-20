@@ -3,6 +3,7 @@
 Development tasks:
 
 - [AccessControl production hardening](access-control-production-hardening-task.md)
+- [AccessControl domain completion](access-control-domain-completion-task.md)
 
 `Gma.Modules.AccessControl` is the optional persisted RBAC implementation for the generic access-control framework.
 
@@ -44,6 +45,11 @@ builder.Services.AddAccessProfilePermissionAllowlist([
 ```
 
 Registration only establishes eligibility. Create, update, and assignment operations also require the acting subject to hold every delegated permission in the profile's owning scope.
+Delegation is evaluated through the framework batch authorization contract, so one profile operation does not perform one provider round trip per permission.
+
+Products may additionally register one or more `IAccessProfileAssignmentPolicy` implementations when profile assignment eligibility depends on product-owned state. Policies run after AccessControl's delegation checks and before persistence; any rejection fails closed. AccessControl intentionally does not know what membership, employment, or another product lifecycle means.
+
+Cross-module extensions may remove every scoped profile assignment for one subject and one exact scope through `IAccessProfileAssignmentRevoker`. The operation is transactional and idempotent, preserves immutable unassignment history, and does not affect compatibility roles or assignments in another scope. Lifecycle event handling belongs in an explicit extension, not in AccessControl.
 
 Cross-module extensions and products that provision global compatibility roles use the Contracts-only facade:
 
@@ -208,6 +214,8 @@ AccessControl references framework contracts and persistence helpers only. It mu
 
 Its persistence package owns a broker-neutral inbox. Cross-module extensions may therefore bind durable integration-event consumers to AccessControl without moving idempotency or transaction ownership into the producing module.
 
+Point checks and profile-delegation checks share the same persisted authorization semantics. The persisted provider groups a batch by subject and scope, reads the union of relevant role and active-profile grants once per group, then applies each permission descriptor's scope policy in memory. Callers should still use `IAccessGrantScopeReader` and module-owned SQL predicates for large resource lists.
+
 ## Verification
 
 Run the complete local gate with Docker available:
@@ -216,4 +224,4 @@ Run the complete local gate with Docker available:
 ./eng/verify.ps1
 ```
 
-The gate checks architecture boundaries, a zero-warning build, SQL Server and PostgreSQL migration drift, fast tests, package vulnerabilities, and real PostgreSQL race/integration tests. Use `-SkipDocker` only for a deliberately reduced local pass; CI keeps PostgreSQL proof in a separate required Linux job.
+The gate checks architecture boundaries, a zero-warning build, SQL Server and PostgreSQL migration drift, fast tests, package vulnerabilities, and real SQL Server and PostgreSQL race/integration tests. Use `-SkipDocker` only for a deliberately reduced local pass; CI keeps both relational-provider proofs in a separate required Linux job.

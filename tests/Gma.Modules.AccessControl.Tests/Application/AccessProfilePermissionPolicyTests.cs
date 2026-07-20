@@ -6,6 +6,7 @@ using Gma.Framework.Results;
 using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Handlers;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.Enums;
 using Gma.Modules.AccessControl.Domain.ValueObjects;
@@ -67,6 +68,7 @@ public sealed class AccessProfilePermissionPolicyTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, authorization.Requirements.Count);
+        Assert.Equal(1, authorization.BatchCallCount);
         Assert.Equal(
             ["reservations.read", "guests.read"],
             authorization.Requirements.Select(requirement => requirement.Permission.Value));
@@ -93,6 +95,7 @@ public sealed class AccessProfilePermissionPolicyTests
             repository,
             rbac: null!,
             policy,
+            new AccessProfileAssignmentPolicy([]),
             ids: null!,
             clock: null!);
 
@@ -106,6 +109,44 @@ public sealed class AccessProfilePermissionPolicyTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(AccessControlApplicationErrors.ProfilePermissionEscalation, result.Error);
+        Assert.Empty(dbContext.AccessProfileAssignments);
+    }
+
+    [Fact]
+    public async Task Product_assignment_policy_rejection_prevents_assignment_writes()
+    {
+        DbContextOptions<AccessControlDbContext> options = new DbContextOptionsBuilder<AccessControlDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using AccessControlDbContext dbContext = new(options);
+        AccessProfileRepository repository = new(dbContext);
+        Result<AccessProfile> created = AccessProfile.Create(
+            Guid.NewGuid(), Scope.Value, "front-desk", "Front desk", null,
+            ["reservations.read"], ToDomain(Actor), Guid.NewGuid(), DateTimeOffset.UtcNow);
+        Assert.True(created.IsSuccess);
+        repository.Add(created.Value);
+        await dbContext.SaveChangesAsync();
+        AccessProfilePermissionPolicy permissionPolicy = CreatePolicy(
+            new StubAuthorizationService(_ => AccessDecision.Allowed()),
+            "reservations.read");
+        AssignAccessProfileCommandHandler handler = new(
+            repository,
+            rbac: null!,
+            permissionPolicy,
+            new AccessProfileAssignmentPolicy([new DenyingAssignmentPolicy()]),
+            ids: null!,
+            clock: null!);
+
+        Result<AccessProfileAssignmentDetails> result = await handler.HandleAsync(
+            new AssignAccessProfileCommand(
+                created.Value.Id,
+                Scope,
+                AccessSubject.User("subject-a"),
+                Actor),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AccessControlApplicationErrors.ProfileAssignmentRejected, result.Error);
         Assert.Empty(dbContext.AccessProfileAssignments);
     }
 
@@ -133,6 +174,7 @@ public sealed class AccessProfilePermissionPolicyTests
         : IAccessAuthorizationService
     {
         public List<AccessRequirement> Requirements { get; } = [];
+        public int BatchCallCount { get; private set; }
 
         public Task<AccessDecision> AuthorizeAsync(
             AccessRequirement requirement,
@@ -141,5 +183,23 @@ public sealed class AccessProfilePermissionPolicyTests
             this.Requirements.Add(requirement);
             return Task.FromResult(decide(requirement));
         }
+
+        public Task<IReadOnlyList<AccessDecision>> AuthorizeManyAsync(
+            IReadOnlyList<AccessRequirement> requirements,
+            CancellationToken cancellationToken)
+        {
+            this.BatchCallCount++;
+            this.Requirements.AddRange(requirements);
+            IReadOnlyList<AccessDecision> decisions = requirements.Select(decide).ToArray();
+            return Task.FromResult(decisions);
+        }
+    }
+
+    private sealed class DenyingAssignmentPolicy : IAccessProfileAssignmentPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            AccessProfileAssignmentPolicyContext context,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(false);
     }
 }

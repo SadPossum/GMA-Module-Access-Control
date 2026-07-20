@@ -23,6 +23,7 @@ public static class AccessControlApplicationErrors
     public static readonly Error ProfileAlreadyExists = new("AccessControl.ProfileAlreadyExists", "An access profile with this key already exists in the owning scope.");
     public static readonly Error ProfileAssignmentAlreadyExists = new("AccessControl.ProfileAssignmentAlreadyExists", "The subject already has this access profile.");
     public static readonly Error ProfileAssignmentNotFound = new("AccessControl.ProfileAssignmentNotFound", "The requested access-profile assignment was not found.");
+    public static readonly Error ProfileAssignmentRejected = new("AccessControl.ProfileAssignmentRejected", "The subject is not eligible for this access profile.");
     public static readonly Error ProfilePermissionNotAllowed = new("AccessControl.ProfilePermissionNotAllowed", "The permission is not eligible for scoped access profiles.");
     public static readonly Error ProfilePermissionEscalation = new("AccessControl.ProfilePermissionEscalation", "The actor cannot delegate a permission they do not hold in the owning scope.");
     public static Error ProfileScopeRequired => AccessProfileDomainErrors.ScopeRequired;

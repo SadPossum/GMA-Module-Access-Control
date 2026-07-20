@@ -18,6 +18,7 @@ internal interface IAccessControlRbacRepository
     Task<bool> RoleHasPermissionAsync(string roleName, string permissionCode, CancellationToken cancellationToken);
     Task<bool> AssignmentExistsAsync(AccessSubject subject, string roleName, AccessScope scope, CancellationToken cancellationToken);
     Task<bool> HasPermissionAsync(AccessSubject subject, PermissionCode permission, AccessScope scope, CancellationToken cancellationToken);
+    Task<IReadOnlyList<bool>> HasPermissionsAsync(IReadOnlyList<AccessRequirement> requirements, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessGrantScope>> ListGrantedScopesAsync(AccessSubject subject, PermissionCode permission, CancellationToken cancellationToken);
     Task EnsureSubjectAsync(AccessSubject subject, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);
     Task EnsureRoleAsync(string roleName, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);

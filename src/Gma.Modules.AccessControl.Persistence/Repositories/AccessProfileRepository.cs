@@ -72,6 +72,26 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
                           assignment.SubjectId == subject.Id,
             cancellationToken);
 
+    public async Task<IReadOnlyList<AccessProfileAssignment>> ListTrackedAssignmentsAsync(
+        AccessSubject subject,
+        AccessScope ownerScope,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(ownerScope);
+        return await dbContext.AccessProfileAssignments
+            .Include(assignment => assignment.Profile)
+            .Where(assignment =>
+                assignment.SubjectKind == (int)subject.Kind &&
+                assignment.SubjectId == subject.Id &&
+                assignment.Profile != null &&
+                assignment.Profile.OwnerScopeValue == ownerScope.Value)
+            .OrderBy(assignment => assignment.ProfileId)
+            .ThenBy(assignment => assignment.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public void AddAssignment(AccessProfileAssignment assignment) =>
         dbContext.AccessProfileAssignments.Add(assignment);
 

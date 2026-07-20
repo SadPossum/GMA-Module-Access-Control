@@ -22,4 +22,26 @@ internal sealed class PersistedAccessControlDecisionProvider(IAccessControlRbacR
                 AccessDecisionReasonCodes.ProviderAbstained,
                 "No persisted access-control grant matched the requirement.");
     }
+
+    public async Task<IReadOnlyList<AccessDecision>> DecideManyAsync(
+        IReadOnlyList<AccessRequirement> requirements,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(requirements);
+        IReadOnlyList<bool> matches = await repository
+            .HasPermissionsAsync(requirements, cancellationToken)
+            .ConfigureAwait(false);
+        if (matches.Count != requirements.Count)
+        {
+            throw new InvalidOperationException("The persisted access-control decision result count is invalid.");
+        }
+
+        return matches
+            .Select(allowed => allowed
+                ? AccessDecision.Allowed()
+                : AccessDecision.Abstain(
+                    AccessDecisionReasonCodes.ProviderAbstained,
+                    "No persisted access-control grant matched the requirement."))
+            .ToArray();
+    }
 }

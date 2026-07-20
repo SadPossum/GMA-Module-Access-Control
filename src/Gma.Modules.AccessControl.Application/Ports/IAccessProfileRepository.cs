@@ -15,6 +15,7 @@ internal interface IAccessProfileRepository
     void Add(AccessProfile profile);
     Task<bool> AssignmentExistsAsync(Guid profileId, AccessSubject subject, CancellationToken cancellationToken);
     Task<AccessProfileAssignment?> GetAssignmentAsync(Guid profileId, AccessSubject subject, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AccessProfileAssignment>> ListTrackedAssignmentsAsync(AccessSubject subject, AccessScope ownerScope, CancellationToken cancellationToken);
     void AddAssignment(AccessProfileAssignment assignment);
     void RemoveAssignment(AccessProfileAssignment assignment);
     Task<AccessControlPage<AccessProfileDetails>> ListAsync(AccessScope ownerScope, bool includeArchived, PageRequest pageRequest, CancellationToken cancellationToken);

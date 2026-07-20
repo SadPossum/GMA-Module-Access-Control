@@ -172,31 +172,66 @@ internal sealed class AccessControlRbacRepository(
         ArgumentNullException.ThrowIfNull(permission);
         ArgumentNullException.ThrowIfNull(scope);
 
-        AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(permission);
-        string[] candidateScopeValues = GetCandidateScopeValues(scope);
-        PersistedPermissionGrant[] candidateGrants = await this.QuerySubjectPermissionGrants(
-                subject,
-                permission,
-                candidateScopeValues)
-            .ToArrayAsync(cancellationToken)
+        IReadOnlyList<bool> decisions = await this.HasPermissionsAsync(
+                [new AccessRequirement(subject, permission, scope)],
+                cancellationToken)
             .ConfigureAwait(false);
+        return decisions[0];
+    }
 
-        foreach (var grant in candidateGrants)
+    public async Task<IReadOnlyList<bool>> HasPermissionsAsync(
+        IReadOnlyList<AccessRequirement> requirements,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(requirements);
+        if (requirements.Any(requirement => requirement is null))
         {
-            if (grant.PermissionCode == AccessControlPermissionGrant.OwnerWildcard &&
-                AccessScopeMatcher.GrantSatisfiesRequest(grant.Scope, scope, OwnerWildcardScopeMatchOptions))
-            {
-                return true;
-            }
+            throw new ArgumentException(
+                "Access requirements cannot contain null values.",
+                nameof(requirements));
+        }
 
-            if (grant.PermissionCode == permission.Value &&
-                AccessScopeMatcher.GrantSatisfiesRequest(grant.Scope, scope, permissionMatchOptions))
+        bool[] decisions = new bool[requirements.Count];
+        IndexedAccessRequirement[] indexed = requirements
+            .Select((requirement, index) => new IndexedAccessRequirement(index, requirement))
+            .ToArray();
+        foreach (IGrouping<AccessRequirementGroupKey, IndexedAccessRequirement> group in indexed.GroupBy(item =>
+                     new AccessRequirementGroupKey(
+                         item.Requirement.Subject.Kind,
+                         item.Requirement.Subject.Id,
+                         item.Requirement.Scope.Value)))
+        {
+            IndexedAccessRequirement first = group.First();
+            PermissionCode[] permissions = group
+                .Select(item => item.Requirement.Permission)
+                .Distinct()
+                .ToArray();
+            PersistedPermissionGrant[] candidateGrants = await this.QuerySubjectPermissionGrants(
+                    first.Requirement.Subject,
+                    permissions,
+                    GetCandidateScopeValues(first.Requirement.Scope))
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (IndexedAccessRequirement item in group)
             {
-                return true;
+                AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(
+                    item.Requirement.Permission);
+                decisions[item.Index] = candidateGrants.Any(grant =>
+                    grant.PermissionCode == AccessControlPermissionGrant.OwnerWildcard
+                        ? AccessScopeMatcher.GrantSatisfiesRequest(
+                            grant.Scope,
+                            item.Requirement.Scope,
+                            OwnerWildcardScopeMatchOptions)
+                        : grant.PermissionCode == item.Requirement.Permission.Value &&
+                          AccessScopeMatcher.GrantSatisfiesRequest(
+                              grant.Scope,
+                              item.Requirement.Scope,
+                              permissionMatchOptions));
             }
         }
 
-        return false;
+        return decisions;
     }
 
     public async Task<IReadOnlyList<AccessGrantScope>> ListGrantedScopesAsync(
@@ -210,7 +245,7 @@ internal sealed class AccessControlRbacRepository(
         AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(permission);
         PersistedPermissionGrant[] grants = await this.QuerySubjectPermissionGrants(
                 subject,
-                permission,
+                [permission],
                 candidateScopeValues: null)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -624,11 +659,18 @@ internal sealed class AccessControlRbacRepository(
 
     private IQueryable<PersistedPermissionGrant> QuerySubjectPermissionGrants(
         AccessSubject subject,
-        PermissionCode permission,
+        IReadOnlyCollection<PermissionCode> permissions,
         string[]? candidateScopeValues)
     {
         int subjectKind = ToPersistedKind(subject);
-        string[] candidatePermissionCodes = [permission.Value, AccessControlPermissionGrant.OwnerWildcard];
+        string[] requestedPermissionCodes = permissions
+            .Select(permission => permission.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        string[] candidatePermissionCodes = requestedPermissionCodes
+            .Append(AccessControlPermissionGrant.OwnerWildcard)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
         IQueryable<AccessSubjectRoleAssignment> assignments = dbContext.SubjectRoleAssignments
             .AsNoTracking()
@@ -676,7 +718,7 @@ internal sealed class AccessControlRbacRepository(
         IQueryable<Gma.Modules.AccessControl.Domain.Entities.AccessProfilePermission> profilePermissions =
             dbContext.AccessProfilePermissions
                 .AsNoTracking()
-                .Where(permissionGrant => permissionGrant.PermissionCode == permission.Value);
+                .Where(permissionGrant => requestedPermissionCodes.Contains(permissionGrant.PermissionCode));
         IQueryable<PersistedPermissionGrant> profileGrants = profileAssignments.Join(
             profilePermissions,
             assignment => assignment.ProfileId,
@@ -985,4 +1027,11 @@ internal sealed class AccessControlRbacRepository(
         string RoleName,
         string ScopeValue,
         DateTimeOffset CreatedAtUtc);
+
+    private sealed record IndexedAccessRequirement(int Index, AccessRequirement Requirement);
+
+    private sealed record AccessRequirementGroupKey(
+        AccessSubjectKind SubjectKind,
+        string SubjectId,
+        string ScopeValue);
 }

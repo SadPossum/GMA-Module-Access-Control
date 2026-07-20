@@ -125,8 +125,9 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         string connectionString = postgreSql.GetConnectionString();
         await MigrateAsync(connectionString);
         const string permissionCode = "reservations.read";
+        const string secondPermissionCode = "guests.read";
         AccessSubject subject = AccessSubject.User("user-a");
-        AccessProfile profile = CreateProfile("front-desk", [permissionCode]);
+        AccessProfile profile = CreateProfile("front-desk", [permissionCode, secondPermissionCode]);
         await using (AccessControlDbContext seed = CreateDbContext(connectionString))
         {
             AccessControlRbacRepository rbac = CreateRbacRepository(seed);
@@ -142,15 +143,20 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         await using (AccessControlDbContext reader = CreateDbContext(connectionString, commands))
         {
             AccessControlRbacRepository rbac = CreateRbacRepository(reader);
-            bool allowed = await rbac.HasPermissionAsync(
-                subject, PermissionCode.Create(permissionCode), TenantScope, CancellationToken.None);
+            IReadOnlyList<bool> batch = await rbac.HasPermissionsAsync(
+            [
+                new AccessRequirement(subject, PermissionCode.Create(permissionCode), TenantScope),
+                new AccessRequirement(subject, PermissionCode.Create(secondPermissionCode), TenantScope),
+                new AccessRequirement(subject, PermissionCode.Create("inventory.read"), TenantScope)
+            ], CancellationToken.None);
+
+            Assert.Equal([true, true, false], batch);
+            Assert.Equal(1, commands.ReaderCommands);
             bool otherTenantDenied = await rbac.HasPermissionAsync(
                 subject,
                 PermissionCode.Create(permissionCode),
                 AccessScope.Parse("tenant:tenant-b"),
                 CancellationToken.None);
-
-            Assert.True(allowed);
             Assert.False(otherTenantDenied);
             Assert.Equal(2, commands.ReaderCommands);
             Assert.Empty(reader.ChangeTracker.Entries());

@@ -348,6 +348,7 @@ public sealed class AccessControlApiModule : IModule
         new(AccessControlApplicationErrors.ProfileAlreadyExists.Code, StatusCodes.Status409Conflict),
         new(AccessControlApplicationErrors.ProfileAssignmentAlreadyExists.Code, StatusCodes.Status409Conflict),
         new(AccessControlApplicationErrors.ProfileAssignmentNotFound.Code, StatusCodes.Status404NotFound),
+        new(AccessControlApplicationErrors.ProfileAssignmentRejected.Code, StatusCodes.Status403Forbidden),
         new(AccessControlApplicationErrors.ProfilePermissionNotAllowed.Code, StatusCodes.Status422UnprocessableEntity),
         new(AccessControlApplicationErrors.ProfilePermissionEscalation.Code, StatusCodes.Status403Forbidden),
         new(AccessControlApplicationErrors.ProfileScopeRequired.Code, StatusCodes.Status400BadRequest),
