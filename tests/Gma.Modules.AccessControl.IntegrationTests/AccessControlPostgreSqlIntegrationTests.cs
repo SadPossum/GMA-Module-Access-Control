@@ -126,6 +126,7 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         await MigrateAsync(connectionString);
 
         await AssertTransactionalCommandsSerializeAsync(connectionString);
+        await AssertBootstrapUsesCurrentTransactionAsync(connectionString);
     }
 
     [DockerFact]
@@ -298,6 +299,29 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         {
             await first.RollbackTransactionAsync();
             await second.RollbackTransactionAsync();
+        }
+    }
+
+    private static async Task AssertBootstrapUsesCurrentTransactionAsync(string connectionString)
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext(connectionString);
+        AccessControlUnitOfWork unitOfWork = new(dbContext);
+        await unitOfWork.BeginTransactionAsync();
+        try
+        {
+            bool bootstrapped = await CreateRbacRepository(dbContext).TryBootstrapOwnerAsync(
+                AccessSubject.AdminActor("transaction-owner"),
+                "owner",
+                Now,
+                allowWhenAssignmentsExist: false,
+                CancellationToken.None);
+
+            Assert.True(bootstrapped);
+            await unitOfWork.CommitTransactionAsync();
+        }
+        finally
+        {
+            await unitOfWork.RollbackTransactionAsync();
         }
     }
 
