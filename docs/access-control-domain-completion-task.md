@@ -1,6 +1,6 @@
 # AccessControl Domain Completion Task
 
-Status: in progress
+Status: complete
 Date: 2026-07-20
 
 ## Goal
@@ -129,3 +129,11 @@ No Organizations, Auth, Staff, or BunkFy-specific concept may be introduced into
 - automatic cascading revocation when a delegating actor later loses authority;
 - deletion or legal-erasure policy for security history;
 - replacing global compatibility roles with scoped profiles.
+
+## Delivery Evidence
+
+- Framework `23862e38c05ac6443a42fa95930071e5963bd34c`: bounded batch authorization with provider-order, deny-precedence, abstention, and compatibility coverage; CI run `29743993464` passed.
+- AccessControl `4814860db77f054d4d2174bb7da3bd8db6d53143`: batch persisted decisions, assignment-policy Contracts, exact-scope revocation, provider-backed command serialization, transaction-aware bootstrap, PostgreSQL and SQL Server behavior proof, 70 fast tests, and 11 relational tests; CI run `29750899983` passed.
+- Extensions `f41ebb9de90ecf6e2ac2674bbc2a90fe931dacf6`: opt-in Organizations membership lifecycle cleanup through AccessControl Contracts only; CI run `29745445842` passed.
+- Skeleton `9b0eebc06b6a7cd180533d1f3cdd3ebc79a58701`: canonical Organizations-to-AccessControl composition, clean-checkout source-root generation, AccessControl public API scaffolding, and generated consumer coverage; Windows and Linux CI run `29753657926` passed, and the unchanged runtime composition passed the 19-case local Docker matrix at the final implementation pins.
+- BunkFy backend `5edb380972e39a9301bab23af68368d477be95e7`: workspace eligibility policy and ordered compatibility-role/profile cleanup with product terminology kept outside GMA; Windows and Linux CI run `29754172755` and 27-case Docker run `29754172805` passed.
