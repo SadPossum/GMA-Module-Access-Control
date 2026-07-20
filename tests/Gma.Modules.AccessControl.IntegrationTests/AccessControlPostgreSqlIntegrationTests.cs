@@ -118,6 +118,17 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     }
 
     [DockerFact]
+    public async Task Transactional_commands_are_serialized_by_the_management_lock()
+    {
+        await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_command_lock_tests");
+        await postgreSql.StartAsync();
+        string connectionString = postgreSql.GetConnectionString();
+        await MigrateAsync(connectionString);
+
+        await AssertTransactionalCommandsSerializeAsync(connectionString);
+    }
+
+    [DockerFact]
     public async Task Scoped_profile_authorization_is_one_query_and_archive_fails_closed()
     {
         await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_profile_authorization_tests");
@@ -264,6 +275,30 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     {
         await using AccessControlDbContext dbContext = CreateDbContext(connectionString);
         await dbContext.Database.MigrateAsync();
+    }
+
+    private static async Task AssertTransactionalCommandsSerializeAsync(string connectionString)
+    {
+        await using AccessControlDbContext firstContext = CreateDbContext(connectionString);
+        await using AccessControlDbContext secondContext = CreateDbContext(connectionString);
+        AccessControlUnitOfWork first = new(firstContext);
+        AccessControlUnitOfWork second = new(secondContext);
+
+        await first.BeginTransactionAsync();
+        Task secondLock = second.BeginTransactionAsync();
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            Assert.False(secondLock.IsCompleted);
+
+            await first.CommitTransactionAsync();
+            await secondLock.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            await first.RollbackTransactionAsync();
+            await second.RollbackTransactionAsync();
+        }
     }
 
     private static AccessProfile CreateProfile(string key, IReadOnlyCollection<string> permissions)

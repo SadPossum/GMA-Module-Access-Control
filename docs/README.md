@@ -143,6 +143,8 @@ Every route requires authentication and resolves a non-global owning scope befor
 
 Profile update and archive requests carry an expected version. Provider concurrency and unique-key races are retried once through the CQRS pipeline so the second evaluation returns a stable application conflict rather than leaking a database exception.
 
+Transactional AccessControl commands acquire the module's provider-backed management lock for the lifetime of their database transaction. Profile assignment eligibility, the assignment write, and exact-scope bulk revocation therefore cannot pass one another and leave a late grant behind. Product assignment policies must read current authoritative eligibility, and lifecycle handlers must make the subject ineligible before calling `IAccessProfileAssignmentRevoker`; a product that derives eligibility from compatibility membership assignments removes those assignments first.
+
 ## Configuration
 
 ```json

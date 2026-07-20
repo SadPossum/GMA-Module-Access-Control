@@ -103,6 +103,7 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(builder.Services, HasService<IAccessControlRbacRepository, AccessControlRbacRepository>());
         Assert.Single(builder.Services, HasService<IAccessProfileRepository, AccessProfileRepository>());
         Assert.Single(builder.Services, HasService<IUnitOfWork, AccessControlUnitOfWork>());
+        Assert.True(typeof(ITransactionalUnitOfWork).IsAssignableFrom(typeof(AccessControlUnitOfWork)));
         Assert.Single(builder.Services, HasService<IInboxStore, AccessControlInboxStore>());
     }
 

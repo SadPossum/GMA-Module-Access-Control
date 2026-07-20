@@ -884,18 +884,7 @@ internal sealed class AccessControlRbacRepository(
         Func<CancellationToken, Task<AccessControlRemovalOutcome>> remove,
         CancellationToken cancellationToken)
     {
-        int managementLockAcquired = await dbContext.BootstrapState
-            .Where(state => state.Id == AccessBootstrapState.SingletonId)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(
-                    state => state.ManagementRevision,
-                    state => state.ManagementRevision + 1),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (managementLockAcquired != 1)
-        {
-            throw new InvalidOperationException("The access-control management safety lock is unavailable.");
-        }
+        await AccessControlManagementLock.AcquireAsync(dbContext, cancellationToken).ConfigureAwait(false);
 
         AccessControlRemovalOutcome outcome = await remove(cancellationToken).ConfigureAwait(false);
         if (outcome == AccessControlRemovalOutcome.Removed)
@@ -936,18 +925,7 @@ internal sealed class AccessControlRbacRepository(
 
     private async Task AcquireManagementLockAsync(CancellationToken cancellationToken)
     {
-        int managementLockAcquired = await dbContext.BootstrapState
-            .Where(state => state.Id == AccessBootstrapState.SingletonId)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(
-                    state => state.ManagementRevision,
-                    state => state.ManagementRevision + 1),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (managementLockAcquired != 1)
-        {
-            throw new InvalidOperationException("The access-control management safety lock is unavailable.");
-        }
+        await AccessControlManagementLock.AcquireAsync(dbContext, cancellationToken).ConfigureAwait(false);
     }
 
     private static AccessGrantScope ToAccessGrantScope(

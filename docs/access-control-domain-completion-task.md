@@ -14,9 +14,9 @@ The completed July 19 hardening slice remains the baseline. This task adds effic
 - AccessControl depends only on Framework projects and owns its domain, persistence, migrations, front doors, and security history;
 - global compatibility roles and scoped access profiles are separate models whose grants are intentionally unioned by the persisted decision provider;
 - profile definitions enforce a 100-permission bound, explicit product allowlisting, actor anti-escalation, optimistic versions, fail-closed archive behavior, and bounded reads;
-- role reconciliation and final global admin-owner removal are serialized through the module management lock;
+- role reconciliation, transactional commands, and final global admin-owner removal are serialized through the module management lock;
 - PostgreSQL proves bootstrap, final-owner protection, profile concurrency, scope isolation, and archive behavior;
-- the current branch passes boundaries, a zero-warning build, SQL Server and PostgreSQL migration-drift checks, 66 fast tests, and package vulnerability audit.
+- the current branch passes boundaries, a zero-warning build, SQL Server and PostgreSQL migration-drift checks, 70 fast tests, 11 real relational tests, and package vulnerability audit.
 
 ## Findings
 
@@ -55,6 +55,7 @@ The completed July 19 hardening slice remains the baseline. This task adds effic
 
 - add a Contracts service that removes all profile assignments for one subject and exact owner scope;
 - remove grants and append immutable unassignment history in one AccessControl transaction;
+- serialize transactional assignment eligibility, assignment writes, and bulk revocation through the module management lock so an already-authorized assignment cannot commit after lifecycle cleanup;
 - make retries idempotent and return the number of removed assignments;
 - retain profile definitions and existing history;
 - prove active and archived profile assignments are both cleaned up and other subjects/scopes remain untouched.
@@ -70,7 +71,8 @@ The completed July 19 hardening slice remains the baseline. This task adds effic
 ### 6. BunkFy Consumer Alignment
 
 - register a BunkFy assignment policy that permits workspace-profile targets only when their AccessControl compatibility assignment proves active workspace membership;
-- compose the reusable GMA lifecycle extension and remove duplicate product cleanup if any is introduced by the alignment;
+- call the Contracts revoker from BunkFy's existing membership handler after removing compatibility assignments, preserving one ordered product lifecycle reaction instead of racing an independent generic consumer;
+- retain the reusable GMA lifecycle extension for products whose membership policy and composition do not require additional ordered product cleanup;
 - verify suspension/removal revokes compatibility roles and every custom profile grant;
 - verify cross-workspace or inactive targets cannot receive a custom profile;
 - keep BunkFy role names, staff UX, and workspace terminology in BunkFy.
@@ -94,6 +96,7 @@ AccessControl owns:
 - persisted compatibility roles, scoped profiles, permissions, assignments, decisions, grant-scope discovery, and security history;
 - efficient persisted batch evaluation;
 - generic assignment-policy orchestration and scoped assignment revocation contracts;
+- provider-backed serialization of transactional access-management commands;
 - provider-neutral persistence and front doors.
 
 GMA Extensions owns:
@@ -112,6 +115,7 @@ No Organizations, Auth, Staff, or BunkFy-specific concept may be introduced into
 - batch authorization is semantically identical to independent single authorization, including deny precedence;
 - products can reject assignments through Contracts only, and one rejection prevents every AccessControl write;
 - a subject's profile grants can be removed for one exact owner scope with immutable history and idempotent replay;
+- concurrent assignment and lifecycle revocation are serialized on PostgreSQL and SQL Server;
 - organization suspension/removal invokes that operation through GMA Extensions;
 - BunkFy rejects inactive and cross-workspace profile targets and removes custom grants when membership becomes inactive;
 - PostgreSQL and SQL Server both prove representative security and concurrency behavior;

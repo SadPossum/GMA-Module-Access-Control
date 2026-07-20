@@ -82,6 +82,17 @@ public sealed class AccessControlSqlServerIntegrationTests
     }
 
     [DockerFact]
+    public async Task SqlServer_transactional_commands_are_serialized_by_the_management_lock()
+    {
+        await using MsSqlContainer sqlServer = CreateSqlServer();
+        await sqlServer.StartAsync();
+        string connectionString = sqlServer.GetConnectionString();
+        await MigrateAsync(connectionString);
+
+        await AssertTransactionalCommandsSerializeAsync(connectionString);
+    }
+
+    [DockerFact]
     public async Task SqlServer_scoped_profiles_batch_revoke_and_enforce_concurrency_constraints()
     {
         await using MsSqlContainer sqlServer = CreateSqlServer();
@@ -205,6 +216,30 @@ public sealed class AccessControlSqlServerIntegrationTests
     {
         await using AccessControlDbContext dbContext = CreateDbContext(connectionString);
         await dbContext.Database.MigrateAsync();
+    }
+
+    private static async Task AssertTransactionalCommandsSerializeAsync(string connectionString)
+    {
+        await using AccessControlDbContext firstContext = CreateDbContext(connectionString);
+        await using AccessControlDbContext secondContext = CreateDbContext(connectionString);
+        AccessControlUnitOfWork first = new(firstContext);
+        AccessControlUnitOfWork second = new(secondContext);
+
+        await first.BeginTransactionAsync();
+        Task secondLock = second.BeginTransactionAsync();
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            Assert.False(secondLock.IsCompleted);
+
+            await first.CommitTransactionAsync();
+            await secondLock.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            await first.RollbackTransactionAsync();
+            await second.RollbackTransactionAsync();
+        }
     }
 
     private static AccessControlDbContext CreateDbContext(string connectionString)
