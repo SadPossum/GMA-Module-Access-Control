@@ -2,6 +2,7 @@
 
 Development tasks:
 
+- [Access profile management contracts](access-profile-management-contracts-task.md)
 - [Scoped access-profile assignments](scoped-access-profile-assignments-task.md)
 - [AccessControl production hardening](access-control-production-hardening-task.md)
 - [AccessControl domain completion](access-control-domain-completion-task.md)
@@ -53,6 +54,8 @@ Products may additionally register one or more `IAccessProfileAssignmentPolicy` 
 Cross-module extensions may remove every scoped profile assignment for one subject and one exact scope through `IAccessProfileAssignmentRevoker`. The operation is transactional and idempotent, preserves immutable unassignment history, and does not affect compatibility roles or assignments in another scope. Lifecycle event handling belongs in an explicit extension, not in AccessControl.
 
 Products that install named defaults or coordinate complete subject access use the Contracts-only `IAccessProfileProvisioner`. It can ensure a tenant-scoped profile by stable key without overwriting an existing profile, inspect exact-scope profiles and subject assignments, and atomically reconcile the complete assignment set for one subject. Reconciliation validates actor delegation and every registered assignment policy before writing, records immutable assignment history, and runs under the same provider-backed management lock as interactive profile mutations. Seed definitions and lifecycle decisions remain product-owned.
+
+Products that expose their own role-management facade use the Contracts-only `IAccessProfileManager`. It provides paged profile reads, the configured permission allowlist, and create/update/archive operations through the same CQRS handlers used by the normal AccessControl API. The facade requires `access-control.profiles.read` or `access-control.profiles.manage` in the exact owner scope before dispatch; expected validation, delegation, not-found, and optimistic-concurrency failures are returned as framework results. Product modules must still authorize their own front door and translate generic profiles into product labels and resource choices.
 
 Cross-module extensions and products that provision global compatibility roles use the Contracts-only facade:
 

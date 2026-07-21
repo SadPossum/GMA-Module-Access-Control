@@ -27,7 +27,7 @@ internal sealed class AccessProfileProvisioner(
                 cancellationToken)
             .ConfigureAwait(false);
         return result.IsSuccess
-            ? ToContract(result.Value)
+            ? AccessProfileContractMappings.ToContract(result.Value)
             : throw new InvalidOperationException(result.Error.Message);
     }
 
@@ -46,7 +46,7 @@ internal sealed class AccessProfileProvisioner(
         AccessProfileDetails? profile = await profiles
             .GetDetailsByKeyAsync(ownerScope, normalizedKey.Value.Value, cancellationToken)
             .ConfigureAwait(false);
-        return profile is null ? null : ToContract(profile);
+        return profile is null ? null : AccessProfileContractMappings.ToContract(profile);
     }
 
     public async Task<AccessProfileAssignmentSet> GetSubjectAssignmentsAsync(
@@ -62,7 +62,7 @@ internal sealed class AccessProfileProvisioner(
         return new AccessProfileAssignmentSet(
             subject,
             ownerScope,
-            assignedProfiles.Select(ToContract).ToArray());
+            assignedProfiles.Select(AccessProfileContractMappings.ToContract).ToArray());
     }
 
     public async Task<AccessProfileAssignmentReconciliation> ReconcileSubjectAssignmentsAsync(
@@ -113,7 +113,7 @@ internal sealed class AccessProfileProvisioner(
             subject,
             ownerScope,
             assignments.Select(assignment => new ScopedAccessProfileAssignment(
-                ToContract(assignment.Profile),
+                AccessProfileContractMappings.ToContract(assignment.Profile),
                 assignment.AssignmentScope)).ToArray());
     }
 
@@ -155,17 +155,4 @@ internal sealed class AccessProfileProvisioner(
         }
     }
 
-    private static AccessProfileDto ToContract(AccessProfileDetails profile) =>
-        new(
-            profile.Id,
-            profile.OwnerScope.Value,
-            profile.Key,
-            profile.DisplayName,
-            profile.Description,
-            profile.Status,
-            profile.Version,
-            profile.Permissions,
-            profile.AssignmentCount,
-            profile.CreatedAtUtc,
-            profile.LastChangedAtUtc);
 }

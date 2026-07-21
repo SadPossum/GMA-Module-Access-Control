@@ -45,6 +45,7 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(services, HasService<ICommandHandler<RevokeRolePermissionCommand, Unit>, RevokeRolePermissionCommandHandler>());
         Assert.Single(services, HasService<IQueryHandler<ListRoleAssignmentsQuery, AccessControlPage<AccessControlRoleAssignmentDetails>>, ListRoleAssignmentsQueryHandler>());
         Assert.Single(services, HasService<IAccessControlRoleProvisioner, AccessControlRoleProvisioner>());
+        Assert.Single(services, HasService<IAccessProfileManager, AccessProfileManager>());
         Assert.Single(services, HasService<IAccessProfileProvisioner, AccessProfileProvisioner>());
         Assert.Single(services, HasService<IScopedAccessProfileProvisioner, AccessProfileProvisioner>());
         Assert.Single(services, HasService<IAccessProfileAssignmentRevoker, AccessProfileAssignmentRevoker>());

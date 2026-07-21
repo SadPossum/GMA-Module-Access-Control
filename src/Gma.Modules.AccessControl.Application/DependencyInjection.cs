@@ -57,6 +57,7 @@ public static class DependencyInjection
         services.TryAddScoped<IAccessControlRoleProvisioner, AccessControlRoleProvisioner>();
         services.TryAddScoped<AccessProfilePermissionPolicy>();
         services.TryAddScoped<AccessProfileAssignmentPolicy>();
+        services.TryAddScoped<IAccessProfileManager, AccessProfileManager>();
         services.TryAddScoped<IAccessProfileProvisioner, AccessProfileProvisioner>();
         services.TryAddScoped<IScopedAccessProfileProvisioner, AccessProfileProvisioner>();
         services.TryAddScoped<IAccessProfileAssignmentRevoker, AccessProfileAssignmentRevoker>();
