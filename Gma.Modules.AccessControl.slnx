@@ -3,6 +3,7 @@
     <File Path="docs/README.md" />
     <File Path="docs/access-control-domain-completion-task.md" />
     <File Path="docs/access-control-production-hardening-task.md" />
+    <File Path="docs/scoped-access-profile-assignments-task.md" />
   </Folder>
   <Folder Name="/eng/">
     <File Path="eng/bootstrap-source-roots.ps1" />
