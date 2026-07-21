@@ -13,5 +13,7 @@
     <ProjectReference Include="$(GmaFrameworkRoot)Results\Gma.Framework.Results\Gma.Framework.Results.csproj" />
     <ProjectReference Include="$(GmaFrameworkRoot)Security\Gma.Framework.AccessControl\Gma.Framework.AccessControl.csproj" />
     <ProjectReference Include="$(GmaFrameworkRoot)Security\Gma.Framework.AccessControl.AspNetCore\Gma.Framework.AccessControl.AspNetCore.csproj" />
+    <ProjectReference Include="$(GmaFrameworkRoot)Security\Gma.Framework.Security\Gma.Framework.Security.csproj" />
+    <ProjectReference Include="$(GmaFrameworkRoot)Security\Gma.Framework.Security.AspNetCore\Gma.Framework.Security.AspNetCore.csproj" />
   </ItemGroup>
 </Project>

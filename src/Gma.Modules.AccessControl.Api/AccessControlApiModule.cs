@@ -9,6 +9,8 @@ using Gma.Framework.Cqrs;
 using Gma.Framework.ModuleComposition;
 using Gma.Framework.Pagination;
 using Gma.Framework.Results;
+using Gma.Framework.Security;
+using Gma.Framework.Security.AspNetCore;
 using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Queries;
@@ -20,6 +22,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 public sealed class AccessControlApiModule : IModule
 {
@@ -28,6 +31,7 @@ public sealed class AccessControlApiModule : IModule
     public void AddServices(IHostApplicationBuilder builder)
     {
         builder.SelectModuleProfile(AccessControlProfiles.Default, "Gma.Modules.AccessControl.Api");
+        builder.Services.AddOptions<AccessControlApiSecurityOptions>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IAccessHttpScopeResolver, AccessProfileScopeResolver>());
         builder.Services.AddAccessControlApplication(builder.Configuration);
@@ -36,6 +40,10 @@ public sealed class AccessControlApiModule : IModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
+        AuthenticationAssuranceRequirement? profileManagementAssurance = endpoints.ServiceProvider
+            .GetRequiredService<IOptions<AccessControlApiSecurityOptions>>()
+            .Value
+            .ProfileManagementAssurance;
         RouteGroupBuilder profiles = endpoints.MapGroup("/api/access-control/profiles")
             .WithModuleName(this.Name)
             .WithTags("AccessControl Profiles")
@@ -73,7 +81,7 @@ public sealed class AccessControlApiModule : IModule
             .Produces<AccessProfileDto>(StatusCodes.Status200OK)
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Read, AccessProfileScopeResolver.ResolverName);
 
-        profiles.MapPost("/", async (
+        RouteHandlerBuilder createProfile = profiles.MapPost("/", async (
             string scope,
             CreateAccessProfileRequest request,
             HttpContext httpContext,
@@ -85,8 +93,9 @@ public sealed class AccessControlApiModule : IModule
                 .ConfigureAwait(false)).ToHttpResult(ErrorStatusCodes))
             .Produces<AccessProfileDto>(StatusCodes.Status200OK)
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Manage, AccessProfileScopeResolver.ResolverName);
+        RequireAssuranceWhenConfigured(createProfile, profileManagementAssurance);
 
-        profiles.MapPut("/{profileId:guid}", async (
+        RouteHandlerBuilder updateProfile = profiles.MapPut("/{profileId:guid}", async (
             Guid profileId,
             string scope,
             UpdateAccessProfileRequest request,
@@ -99,8 +108,9 @@ public sealed class AccessControlApiModule : IModule
                 .ConfigureAwait(false)).ToHttpResult(ErrorStatusCodes))
             .Produces<AccessProfileDto>(StatusCodes.Status200OK)
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Manage, AccessProfileScopeResolver.ResolverName);
+        RequireAssuranceWhenConfigured(updateProfile, profileManagementAssurance);
 
-        profiles.MapPost("/{profileId:guid}/archive", async (
+        RouteHandlerBuilder archiveProfile = profiles.MapPost("/{profileId:guid}/archive", async (
             Guid profileId,
             string scope,
             ArchiveAccessProfileRequest request,
@@ -110,8 +120,9 @@ public sealed class AccessControlApiModule : IModule
             CancellationToken cancellationToken) =>
             (await ArchiveProfileAsync(
                 dispatcher, profileId, scope, request, ResolveActor(httpContext, subjects), cancellationToken)
-                .ConfigureAwait(false)).ToHttpResult(ErrorStatusCodes))
+            .ConfigureAwait(false)).ToHttpResult(ErrorStatusCodes))
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Manage, AccessProfileScopeResolver.ResolverName);
+        RequireAssuranceWhenConfigured(archiveProfile, profileManagementAssurance);
 
         profiles.MapGet("/{profileId:guid}/assignments", async (
             Guid profileId,
@@ -127,7 +138,7 @@ public sealed class AccessControlApiModule : IModule
             .Produces<AccessControlPage<AccessProfileAssignmentDto>>(StatusCodes.Status200OK)
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Read, AccessProfileScopeResolver.ResolverName);
 
-        profiles.MapPost("/{profileId:guid}/assignments", async (
+        RouteHandlerBuilder assignProfile = profiles.MapPost("/{profileId:guid}/assignments", async (
             Guid profileId,
             string scope,
             AccessProfileAssignmentRequest request,
@@ -140,8 +151,9 @@ public sealed class AccessControlApiModule : IModule
                 .ConfigureAwait(false)).ToHttpResult(ErrorStatusCodes))
             .Produces<AccessProfileAssignmentDto>(StatusCodes.Status200OK)
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Assign, AccessProfileScopeResolver.ResolverName);
+        RequireAssuranceWhenConfigured(assignProfile, profileManagementAssurance);
 
-        profiles.MapDelete("/{profileId:guid}/assignments", async (
+        RouteHandlerBuilder unassignProfile = profiles.MapDelete("/{profileId:guid}/assignments", async (
             Guid profileId,
             string scope,
             string subjectKind,
@@ -155,6 +167,7 @@ public sealed class AccessControlApiModule : IModule
                 ResolveActor(httpContext, subjects), cancellationToken).ConfigureAwait(false))
                 .ToHttpResult(ErrorStatusCodes))
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Assign, AccessProfileScopeResolver.ResolverName);
+        RequireAssuranceWhenConfigured(unassignProfile, profileManagementAssurance);
 
         profiles.MapGet("/{profileId:guid}/history", async (
             Guid profileId,
@@ -170,6 +183,13 @@ public sealed class AccessControlApiModule : IModule
             .Produces<AccessControlPage<AccessProfileChangeDto>>(StatusCodes.Status200OK)
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Read, AccessProfileScopeResolver.ResolverName);
     }
+
+    private static RouteHandlerBuilder RequireAssuranceWhenConfigured(
+        RouteHandlerBuilder endpoint,
+        AuthenticationAssuranceRequirement? requirement) =>
+        requirement is null
+            ? endpoint
+            : endpoint.RequireAuthenticationAssurance(requirement);
 
     public sealed record CreateAccessProfileRequest(
         string Key,

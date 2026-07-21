@@ -11,3 +11,8 @@ Useful entry points:
 - `eng/verify.ps1`
 
 Consumers integrate through `Gma.Modules.AccessControl.Contracts`. Persistence ports in Application are module-internal seams and are not consumer APIs.
+
+Hosts may configure `AccessControlApiSecurityOptions.ProfileManagementAssurance`
+with a GMA `AuthenticationAssuranceRequirement`. When configured, access-profile
+and assignment mutations require that assurance; read endpoints retain their
+existing behavior.
