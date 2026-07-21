@@ -30,6 +30,13 @@ For example, a profile owned by `tenant:acme` may be assigned at `tenant:acme`, 
 - Scoped full-set reconciliation owns all assignments for one subject whose profiles belong to the supplied owner scope. It validates every target before writing and applies the change transactionally.
 - Keep `IAccessProfileAssignmentRevoker.RevokeAllAsync(subject, ownerScope, ...)` as the fail-closed operation that removes assignments at every grant scope for profiles owned by that scope.
 
+### Operator management follow-up
+
+- `IScopedAccessProfileProvisioner` remains the trusted orchestration contract for bootstrap, migrations, and product workflows that already own authorization.
+- `IScopedAccessProfileManager` is the actor-facing contract. Reads require `access-control.profiles.read`; exact reconciliation requires `access-control.profiles.assign`.
+- Expected policy failures are returned as stable `Result` errors instead of provisioner exceptions. Product modules can add membership and resource rules without depending on AccessControl application internals.
+- The manager preserves the supplied actor for delegation checks and immutable assignment history.
+
 ## API And Operations
 
 - Profile assignment creation accepts an optional assignment scope and defaults to the owner scope.
@@ -69,6 +76,13 @@ Completed evidence (2026-07-21):
 - all 14 Docker-backed PostgreSQL and SQL Server integration/race tests passed;
 - provider-specific upgrade tests preserved legacy assignments and backfilled the profile owner scope;
 - the package vulnerability scan reported no vulnerable direct or transitive packages.
+
+Operator-management follow-up evidence (2026-07-22):
+
+- `eng/verify.ps1` passed boundaries, zero-warning build, and both migration drift checks;
+- all 95 fast tests and all 14 Docker-backed integration tests passed;
+- authorization is proven to deny before assignment reads or command dispatch;
+- the package vulnerability scan remained clean.
 
 ## Follow-Up Consumers
 
