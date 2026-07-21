@@ -19,7 +19,7 @@ internal sealed class RevokeAccessProfileAssignmentsCommandHandler(
         CancellationToken cancellationToken)
     {
         IReadOnlyList<AccessProfileAssignment> assignments = await repository
-            .ListTrackedAssignmentsAsync(command.Subject, command.OwnerScope, cancellationToken)
+            .ListTrackedAssignmentsAsync(command.Subject, command.OwnerScope, null, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset nowUtc = clock.UtcNow;
         foreach (AccessProfileAssignment assignment in assignments)
@@ -29,7 +29,8 @@ internal sealed class RevokeAccessProfileAssignmentsCommandHandler(
                 AccessProfileChangeKind.Unassigned,
                 AccessProfileSubjectMappings.ToDomain(command.Actor),
                 AccessProfileSubjectMappings.ToDomain(command.Subject),
-                nowUtc);
+                nowUtc,
+                assignment.AssignmentScopeValue);
             repository.RemoveAssignment(assignment);
         }
 

@@ -74,8 +74,8 @@ public sealed class AccessProfileRepositoryTests
         await rbac.EnsureSubjectAsync(subjectA, Now, CancellationToken.None);
         await rbac.EnsureSubjectAsync(subjectB, Now, CancellationToken.None);
         repository.Add(profile);
-        AccessProfileAssignment assignmentA = CreateAssignment(profile.Id, subjectA, ids.NewId());
-        AccessProfileAssignment assignmentB = CreateAssignment(profile.Id, subjectB, ids.NewId());
+        AccessProfileAssignment assignmentA = CreateAssignment(profile.Id, tenantA, subjectA, ids.NewId());
+        AccessProfileAssignment assignmentB = CreateAssignment(profile.Id, tenantA, subjectB, ids.NewId());
         repository.AddAssignment(assignmentA);
         repository.AddAssignment(assignmentB);
         profile.RecordAssignmentChange(ids.NewId(), DomainChangeKind.Assigned, Actor, ToDomain(subjectA), Now.AddMinutes(1));
@@ -138,7 +138,7 @@ public sealed class AccessProfileRepositoryTests
         AccessProfile profile = CreateProfile(tenantScope, "front-desk", [permissionCode]);
         await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
         profiles.Add(profile);
-        profiles.AddAssignment(CreateAssignment(profile.Id, subject, ids.NewId()));
+        profiles.AddAssignment(CreateAssignment(profile.Id, tenantScope, subject, ids.NewId()));
         profile.RecordAssignmentChange(ids.NewId(), DomainChangeKind.Assigned, Actor, ToDomain(subject), Now);
         await dbContext.SaveChangesAsync();
 
@@ -168,6 +168,52 @@ public sealed class AccessProfileRepositoryTests
         Assert.False(afterArchive);
     }
 
+    [Fact]
+    public async Task Profile_grant_uses_assignment_scope_instead_of_profile_owner_scope()
+    {
+        await using SqliteConnection connection = await OpenConnectionAsync();
+        await using AccessControlDbContext dbContext = await CreateDbContextAsync(connection);
+        const string permissionCode = "reservations.read";
+        SequenceIdGenerator ids = new();
+        AccessControlRbacRepository rbac = CreateRbacRepository(
+            dbContext,
+            ids,
+            (permissionCode, new AccessScopeMatchOptions(AllowAncestorScopeGrants: true)));
+        AccessProfileRepository profiles = new(dbContext);
+        AccessScope tenantScope = AccessScope.Parse("tenant:tenant-a");
+        AccessScope propertyScope = AccessScope.Parse("tenant:tenant-a/property:property-a");
+        AccessScope roomScope = AccessScope.Parse("tenant:tenant-a/property:property-a/room:room-a");
+        AccessScope siblingScope = AccessScope.Parse("tenant:tenant-a/property:property-b");
+        AccessSubject subject = AccessSubject.User("user-a");
+        AccessProfile profile = CreateProfile(tenantScope, "front-desk", [permissionCode]);
+        await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+        profiles.Add(profile);
+        profiles.AddAssignment(CreateAssignment(profile.Id, propertyScope, subject, ids.NewId()));
+        profile.RecordAssignmentChange(
+            ids.NewId(),
+            DomainChangeKind.Assigned,
+            Actor,
+            ToDomain(subject),
+            Now,
+            propertyScope.Value);
+        await dbContext.SaveChangesAsync();
+
+        Assert.False(await rbac.HasPermissionAsync(
+            subject, PermissionCode.Create(permissionCode), tenantScope, CancellationToken.None));
+        Assert.True(await rbac.HasPermissionAsync(
+            subject, PermissionCode.Create(permissionCode), propertyScope, CancellationToken.None));
+        Assert.True(await rbac.HasPermissionAsync(
+            subject, PermissionCode.Create(permissionCode), roomScope, CancellationToken.None));
+        Assert.False(await rbac.HasPermissionAsync(
+            subject, PermissionCode.Create(permissionCode), siblingScope, CancellationToken.None));
+        Assert.Empty(await profiles.ListDetailsForSubjectAsync(
+            subject, tenantScope, CancellationToken.None));
+        ScopedAccessProfileAssignmentDetails scoped = Assert.Single(
+            await profiles.ListScopedDetailsForSubjectAsync(subject, tenantScope, CancellationToken.None));
+        Assert.Equal(profile.Id, scoped.Profile.Id);
+        Assert.Equal(propertyScope, scoped.AssignmentScope);
+    }
+
     private static AccessProfile CreateProfile(
         AccessScope scope,
         string key,
@@ -181,11 +227,12 @@ public sealed class AccessProfileRepositoryTests
 
     private static AccessProfileAssignment CreateAssignment(
         Guid profileId,
+        AccessScope assignmentScope,
         AccessSubject subject,
         Guid id)
     {
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
-            id, profileId, ToDomain(subject), Actor, Now);
+            id, profileId, assignmentScope.Value, ToDomain(subject), Actor, Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

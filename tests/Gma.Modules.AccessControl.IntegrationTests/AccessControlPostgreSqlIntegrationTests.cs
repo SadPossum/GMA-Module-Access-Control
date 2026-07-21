@@ -18,6 +18,8 @@ using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Testcontainers.PostgreSql;
 using Xunit;
 using ContractChangeKind = Gma.Modules.AccessControl.Contracts.AccessProfileChangeKind;
@@ -30,6 +32,51 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     private static readonly DateTimeOffset Now = new(2026, 7, 19, 10, 0, 0, TimeSpan.Zero);
     private static readonly AccessScope TenantScope = AccessScope.Parse("tenant:tenant-a");
     private static readonly AccessProfileSubject Actor = new(AccessProfileSubjectKind.AdminActor, "actor-a");
+
+    [DockerFact]
+    public async Task Scoped_assignment_migration_backfills_existing_grants_to_the_profile_owner_scope()
+    {
+        await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_assignment_migration_tests");
+        await postgreSql.StartAsync();
+        string connectionString = postgreSql.GetConnectionString();
+        Guid profileId = Guid.NewGuid();
+        Guid assignmentId = Guid.NewGuid();
+        const string subjectId = "legacy-user";
+        const string profileKey = "legacy-profile";
+        const string profileName = "Legacy profile";
+        const string actorId = "migration-test";
+
+        await using (AccessControlDbContext legacy = CreateDbContext(connectionString))
+        {
+            IMigrator migrator = legacy.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260719070242_AddScopedAccessProfiles");
+            await legacy.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                INSERT INTO access.principals ("Kind", "SubjectId", "CreatedAtUtc")
+                VALUES ({(int)AccessProfileSubjectKind.User}, {subjectId}, {Now});
+
+                INSERT INTO access.access_profiles
+                    ("Id", "OwnerScope", "Key", "DisplayName", "Description", "Status", "Version",
+                     "CreatedByKind", "CreatedById", "CreatedAtUtc", "LastChangedByKind", "LastChangedById", "LastChangedAtUtc")
+                VALUES
+                    ({profileId}, {TenantScope.Value}, {profileKey}, {profileName}, {string.Empty},
+                     {(int)Gma.Modules.AccessControl.Domain.Enums.AccessProfileStatus.Active}, {1L},
+                     {(int)AccessProfileSubjectKind.System}, {actorId},
+                     {Now}, {(int)AccessProfileSubjectKind.System}, {actorId}, {Now});
+
+                INSERT INTO access.access_profile_assignments
+                    ("Id", "ProfileId", "SubjectKind", "SubjectId", "CreatedByKind", "CreatedById", "CreatedAtUtc")
+                VALUES
+                    ({assignmentId}, {profileId}, {(int)AccessProfileSubjectKind.User}, {subjectId},
+                     {(int)AccessProfileSubjectKind.System}, {actorId}, {Now});
+                """);
+            await legacy.Database.MigrateAsync();
+        }
+
+        await using AccessControlDbContext verification = CreateDbContext(connectionString);
+        AccessProfileAssignment assignment = await verification.AccessProfileAssignments.SingleAsync();
+        Assert.Equal(TenantScope.Value, assignment.AssignmentScopeValue);
+    }
 
     [DockerFact]
     public async Task Concurrent_bootstrap_has_exactly_one_winner()
@@ -139,13 +186,20 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         const string permissionCode = "reservations.read";
         const string secondPermissionCode = "guests.read";
         AccessSubject subject = AccessSubject.User("user-a");
+        AccessSubject propertySubject = AccessSubject.User("property-user");
+        AccessScope propertyScope = AccessScope.Parse("tenant:tenant-a/property:property-a");
+        AccessScope siblingPropertyScope = AccessScope.Parse("tenant:tenant-a/property:property-b");
         AccessProfile profile = CreateProfile("front-desk", [permissionCode, secondPermissionCode]);
+        AccessProfile propertyProfile = CreateProfile("property-front-desk", [permissionCode]);
         await using (AccessControlDbContext seed = CreateDbContext(connectionString))
         {
             AccessControlRbacRepository rbac = CreateRbacRepository(seed);
             await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
-            seed.AccessProfiles.Add(profile);
-            seed.AccessProfileAssignments.Add(CreateAssignment(profile.Id, subject));
+            await rbac.EnsureSubjectAsync(propertySubject, Now, CancellationToken.None);
+            seed.AccessProfiles.AddRange(profile, propertyProfile);
+            seed.AccessProfileAssignments.AddRange(
+                CreateAssignment(profile.Id, subject),
+                CreateAssignment(propertyProfile.Id, propertySubject, propertyScope));
             profile.RecordAssignmentChange(
                 Guid.NewGuid(), DomainChangeKind.Assigned, Actor, ToDomain(subject), Now.AddMinutes(1));
             await seed.SaveChangesAsync();
@@ -172,6 +226,17 @@ public sealed class AccessControlPostgreSqlIntegrationTests
             Assert.False(otherTenantDenied);
             Assert.Equal(2, commands.ReaderCommands);
             Assert.Empty(reader.ChangeTracker.Entries());
+        }
+
+        await using (AccessControlDbContext scopedReader = CreateDbContext(connectionString))
+        {
+            AccessControlRbacRepository rbac = CreateRbacRepository(scopedReader);
+            Assert.True(await rbac.HasPermissionAsync(
+                propertySubject, PermissionCode.Create(permissionCode), propertyScope, CancellationToken.None));
+            Assert.False(await rbac.HasPermissionAsync(
+                propertySubject, PermissionCode.Create(permissionCode), TenantScope, CancellationToken.None));
+            Assert.False(await rbac.HasPermissionAsync(
+                propertySubject, PermissionCode.Create(permissionCode), siblingPropertyScope, CancellationToken.None));
         }
 
         await using (AccessControlDbContext writer = CreateDbContext(connectionString))
@@ -205,15 +270,22 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         AccessSubject subject = AccessSubject.User("user-a");
         AccessProfile assignedProfile = CreateProfile(TenantScope, "front-desk", ["reservations.read"]);
         AccessProfile unassignedProfile = CreateProfile(TenantScope, "manager", ["staff.manage"]);
+        AccessProfile propertyAssignedProfile = CreateProfile(TenantScope, "housekeeping", ["inventory.read"]);
+        AccessScope propertyScope = AccessScope.Parse("tenant:tenant-a/property:property-a");
         AccessProfile otherTenantProfile = CreateProfile(otherTenantScope, "front-desk", ["reservations.read"]);
         await using (AccessControlDbContext seed = CreateDbContext(connectionString))
         {
             AccessControlRbacRepository rbac = CreateRbacRepository(seed);
             await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
-            seed.AccessProfiles.AddRange(assignedProfile, unassignedProfile, otherTenantProfile);
+            seed.AccessProfiles.AddRange(
+                assignedProfile,
+                unassignedProfile,
+                propertyAssignedProfile,
+                otherTenantProfile);
             seed.AccessProfileAssignments.AddRange(
                 CreateAssignment(assignedProfile.Id, subject),
-                CreateAssignment(otherTenantProfile.Id, subject));
+                CreateAssignment(propertyAssignedProfile.Id, subject, propertyScope),
+                CreateAssignment(otherTenantProfile.Id, subject, otherTenantScope));
             await seed.SaveChangesAsync();
         }
 
@@ -228,6 +300,8 @@ public sealed class AccessControlPostgreSqlIntegrationTests
             subject, otherTenantScope, CancellationToken.None);
         AccessProfileAssignmentSet noAssignments = await provisioner.GetSubjectAssignmentsAsync(
             AccessSubject.User("user-b"), TenantScope, CancellationToken.None);
+        ScopedAccessProfileAssignmentSet scopedAssignments = await provisioner.GetSubjectScopedAssignmentsAsync(
+            subject, TenantScope, CancellationToken.None);
 
         AccessProfileDto tenantProfile = Assert.Single(tenantAssignments.Profiles);
         Assert.Equal(assignedProfile.Id, tenantProfile.Id);
@@ -235,6 +309,18 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         Assert.Equal(1, tenantProfile.AssignmentCount);
         Assert.Equal(otherTenantProfile.Id, Assert.Single(otherTenantAssignments.Profiles).Id);
         Assert.Empty(noAssignments.Profiles);
+        Assert.Collection(
+            scopedAssignments.Assignments.OrderBy(assignment => assignment.AssignmentScope.Value),
+            assignment =>
+            {
+                Assert.Equal(assignedProfile.Id, assignment.Profile.Id);
+                Assert.Equal(TenantScope, assignment.AssignmentScope);
+            },
+            assignment =>
+            {
+                Assert.Equal(propertyAssignedProfile.Id, assignment.Profile.Id);
+                Assert.Equal(propertyScope, assignment.AssignmentScope);
+            });
         Assert.Empty(reader.ChangeTracker.Entries());
     }
 
@@ -384,10 +470,13 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         return result.Value;
     }
 
-    private static AccessProfileAssignment CreateAssignment(Guid profileId, AccessSubject subject)
+    private static AccessProfileAssignment CreateAssignment(
+        Guid profileId,
+        AccessSubject subject,
+        AccessScope? assignmentScope = null)
     {
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
-            Guid.NewGuid(), profileId, ToDomain(subject), Actor, Now);
+            Guid.NewGuid(), profileId, (assignmentScope ?? TenantScope).Value, ToDomain(subject), Actor, Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

@@ -15,7 +15,8 @@ public sealed class AccessProfileChange
         AccessProfileSubject actor,
         long profileVersion,
         DateTimeOffset occurredAtUtc,
-        AccessProfileSubject? assignmentSubject = null)
+        AccessProfileSubject? assignmentSubject = null,
+        AccessProfileAssignmentScope? assignmentScope = null)
     {
         this.Id = id;
         this.ProfileId = profileId;
@@ -24,6 +25,7 @@ public sealed class AccessProfileChange
         this.ActorId = actor.Id;
         this.SubjectKind = assignmentSubject is null ? null : (int)assignmentSubject.Kind;
         this.SubjectId = assignmentSubject?.Id;
+        this.AssignmentScopeValue = assignmentScope?.Value;
         this.ProfileVersion = profileVersion;
         this.OccurredAtUtc = occurredAtUtc;
     }
@@ -35,6 +37,7 @@ public sealed class AccessProfileChange
     public string ActorId { get; private set; } = string.Empty;
     public int? SubjectKind { get; private set; }
     public string? SubjectId { get; private set; }
+    public string? AssignmentScopeValue { get; private set; }
     public long ProfileVersion { get; private set; }
     public DateTimeOffset OccurredAtUtc { get; private set; }
     public AccessProfile? Profile { get; private set; }

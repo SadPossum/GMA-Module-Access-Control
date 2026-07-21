@@ -20,6 +20,8 @@ public sealed class AccessProfileAssignmentRevokerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 20, 10, 0, 0, TimeSpan.Zero);
     private static readonly AccessScope ScopeA = AccessScope.Parse("tenant:tenant-a");
+    private static readonly AccessScope PropertyA =
+        AccessScope.Parse("tenant:tenant-a/property:property-a");
     private static readonly AccessScope ScopeB = AccessScope.Parse("tenant:tenant-b");
     private static readonly AccessSubject Target = AccessSubject.User("target-a");
     private static readonly AccessSubject Other = AccessSubject.User("other-a");
@@ -38,10 +40,11 @@ public sealed class AccessProfileAssignmentRevokerTests
         AccessProfile otherScope = CreateProfile(ScopeB, "other-scope");
         dbContext.AccessProfiles.AddRange(active, archived, otherScope);
         dbContext.AccessProfileAssignments.AddRange(
-            CreateAssignment(active.Id, Target),
-            CreateAssignment(archived.Id, Target),
-            CreateAssignment(otherScope.Id, Target),
-            CreateAssignment(active.Id, Other));
+            CreateAssignment(active.Id, ScopeA, Target),
+            CreateAssignment(active.Id, PropertyA, Target),
+            CreateAssignment(archived.Id, ScopeA, Target),
+            CreateAssignment(otherScope.Id, ScopeB, Target),
+            CreateAssignment(active.Id, ScopeA, Other));
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
         AccessProfileRepository repository = new(dbContext);
@@ -56,11 +59,11 @@ public sealed class AccessProfileAssignmentRevokerTests
         await dbContext.SaveChangesAsync();
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(2, result.Value);
+        Assert.Equal(3, result.Value);
         Assert.Equal(2, await dbContext.AccessProfileAssignments.CountAsync());
         Assert.Single(await dbContext.AccessProfileAssignments.Where(assignment =>
             assignment.SubjectId == Target.Id).ToArrayAsync());
-        Assert.Equal(2, await dbContext.AccessProfileChanges.CountAsync(change =>
+        Assert.Equal(3, await dbContext.AccessProfileChanges.CountAsync(change =>
             change.Kind == AccessProfileChangeKind.Unassigned &&
             change.ActorId == Actor.Id &&
             change.SubjectId == Target.Id));
@@ -82,10 +85,13 @@ public sealed class AccessProfileAssignmentRevokerTests
         return result.Value;
     }
 
-    private static AccessProfileAssignment CreateAssignment(Guid profileId, AccessSubject subject)
+    private static AccessProfileAssignment CreateAssignment(
+        Guid profileId,
+        AccessScope assignmentScope,
+        AccessSubject subject)
     {
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
-            Guid.NewGuid(), profileId, ToDomain(subject), ToDomain(Actor), Now);
+            Guid.NewGuid(), profileId, assignmentScope.Value, ToDomain(subject), ToDomain(Actor), Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

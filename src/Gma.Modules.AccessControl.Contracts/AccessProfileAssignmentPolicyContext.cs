@@ -10,7 +10,8 @@ public sealed class AccessProfileAssignmentPolicyContext
         AccessScope ownerScope,
         AccessSubject actor,
         AccessSubject subject,
-        IReadOnlyCollection<string> permissions)
+        IReadOnlyCollection<string> permissions,
+        AccessScope? assignmentScope = null)
     {
         if (profileId == Guid.Empty)
         {
@@ -30,6 +31,7 @@ public sealed class AccessProfileAssignmentPolicyContext
         this.ProfileId = profileId;
         this.ProfileKey = profileKey;
         this.OwnerScope = ownerScope;
+        this.AssignmentScope = assignmentScope ?? ownerScope;
         this.Actor = actor;
         this.Subject = subject;
         this.Permissions = permissions.ToArray();
@@ -38,6 +40,7 @@ public sealed class AccessProfileAssignmentPolicyContext
     public Guid ProfileId { get; }
     public string ProfileKey { get; }
     public AccessScope OwnerScope { get; }
+    public AccessScope AssignmentScope { get; }
     public AccessSubject Actor { get; }
     public AccessSubject Subject { get; }
     public IReadOnlyList<string> Permissions { get; }

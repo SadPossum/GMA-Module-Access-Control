@@ -8,6 +8,7 @@ internal sealed class AssignAccessProfileCommandValidator : ICommandValidator<As
     public IEnumerable<string> Validate(AssignAccessProfileCommand command) =>
         AccessProfileCommandValidation.ValidateProfileId(command.ProfileId)
             .Concat(AccessProfileCommandValidation.ValidateOwnerScope(command.OwnerScope))
+            .Concat(AccessProfileCommandValidation.ValidateOwnerScope(command.AssignmentScope))
             .Concat(AccessProfileCommandValidation.ValidateSubject(command.Subject))
             .Concat(AccessProfileCommandValidation.ValidateActor(command.Actor));
 }

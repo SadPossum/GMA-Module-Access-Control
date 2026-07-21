@@ -12,4 +12,5 @@ public sealed record AccessProfileChangeDetails(
     AccessSubjectKind? SubjectKind,
     string? SubjectId,
     long ProfileVersion,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    AccessScope? AssignmentScope);

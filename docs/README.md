@@ -2,6 +2,7 @@
 
 Development tasks:
 
+- [Scoped access-profile assignments](scoped-access-profile-assignments-task.md)
 - [AccessControl production hardening](access-control-production-hardening-task.md)
 - [AccessControl domain completion](access-control-domain-completion-task.md)
 

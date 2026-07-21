@@ -17,6 +17,8 @@ using Gma.Modules.AccessControl.IntegrationTests.Support;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Testcontainers.MsSql;
 using Xunit;
 using DomainChangeKind = Gma.Modules.AccessControl.Domain.Enums.AccessProfileChangeKind;
@@ -28,6 +30,51 @@ public sealed class AccessControlSqlServerIntegrationTests
     private static readonly DateTimeOffset Now = new(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
     private static readonly AccessScope TenantScope = AccessScope.Parse("tenant:tenant-a");
     private static readonly AccessProfileSubject Actor = new(AccessProfileSubjectKind.System, "integration-tests");
+
+    [DockerFact]
+    public async Task SqlServer_scoped_assignment_migration_backfills_existing_grants_to_the_profile_owner_scope()
+    {
+        await using MsSqlContainer sqlServer = CreateSqlServer();
+        await sqlServer.StartAsync();
+        string connectionString = sqlServer.GetConnectionString();
+        Guid profileId = Guid.NewGuid();
+        Guid assignmentId = Guid.NewGuid();
+        const string subjectId = "legacy-user";
+        const string profileKey = "legacy-profile";
+        const string profileName = "Legacy profile";
+        const string actorId = "migration-test";
+
+        await using (AccessControlDbContext legacy = CreateDbContext(connectionString))
+        {
+            IMigrator migrator = legacy.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260719070235_AddScopedAccessProfiles");
+            await legacy.Database.ExecuteSqlInterpolatedAsync(
+                $"""
+                INSERT INTO [access].[principals] ([Kind], [SubjectId], [CreatedAtUtc])
+                VALUES ({(int)AccessProfileSubjectKind.User}, {subjectId}, {Now});
+
+                INSERT INTO [access].[access_profiles]
+                    ([Id], [OwnerScope], [Key], [DisplayName], [Description], [Status], [Version],
+                     [CreatedByKind], [CreatedById], [CreatedAtUtc], [LastChangedByKind], [LastChangedById], [LastChangedAtUtc])
+                VALUES
+                    ({profileId}, {TenantScope.Value}, {profileKey}, {profileName}, {string.Empty},
+                     {(int)Gma.Modules.AccessControl.Domain.Enums.AccessProfileStatus.Active}, {1L},
+                     {(int)AccessProfileSubjectKind.System}, {actorId},
+                     {Now}, {(int)AccessProfileSubjectKind.System}, {actorId}, {Now});
+
+                INSERT INTO [access].[access_profile_assignments]
+                    ([Id], [ProfileId], [SubjectKind], [SubjectId], [CreatedByKind], [CreatedById], [CreatedAtUtc])
+                VALUES
+                    ({assignmentId}, {profileId}, {(int)AccessProfileSubjectKind.User}, {subjectId},
+                     {(int)AccessProfileSubjectKind.System}, {actorId}, {Now});
+                """);
+            await legacy.Database.MigrateAsync();
+        }
+
+        await using AccessControlDbContext verification = CreateDbContext(connectionString);
+        AccessProfileAssignment assignment = await verification.AccessProfileAssignments.SingleAsync();
+        Assert.Equal(TenantScope.Value, assignment.AssignmentScopeValue);
+    }
 
     [DockerFact]
     public async Task SqlServer_concurrent_bootstrap_has_exactly_one_winner()
@@ -296,6 +343,7 @@ public sealed class AccessControlSqlServerIntegrationTests
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
             Guid.NewGuid(),
             profileId,
+            TenantScope.Value,
             new AccessProfileSubject(AccessProfileSubjectKind.User, subject.Id),
             Actor,
             Now);

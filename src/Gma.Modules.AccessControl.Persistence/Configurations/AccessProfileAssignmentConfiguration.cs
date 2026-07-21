@@ -13,13 +13,29 @@ internal sealed class AccessProfileAssignmentConfiguration : IEntityTypeConfigur
         builder.ToTable("access_profile_assignments");
         builder.HasKey(assignment => assignment.Id);
         builder.Property(assignment => assignment.Id).ValueGeneratedNever();
+        builder.Property(assignment => assignment.AssignmentScopeValue)
+            .HasColumnName("AssignmentScope")
+            .HasMaxLength(AccessScope.MaxLength)
+            .IsRequired();
         builder.Property(assignment => assignment.SubjectKind).IsRequired();
         builder.Property(assignment => assignment.SubjectId).HasMaxLength(AccessSubject.IdMaxLength).IsRequired();
         builder.Property(assignment => assignment.CreatedByKind).IsRequired();
         builder.Property(assignment => assignment.CreatedById).HasMaxLength(AccessSubject.IdMaxLength).IsRequired();
         builder.Property(assignment => assignment.CreatedAtUtc).IsRequired();
-        builder.HasIndex(assignment => new { assignment.ProfileId, assignment.SubjectKind, assignment.SubjectId }).IsUnique();
-        builder.HasIndex(assignment => new { assignment.SubjectKind, assignment.SubjectId, assignment.ProfileId });
+        builder.HasIndex(assignment => new
+        {
+            assignment.ProfileId,
+            assignment.SubjectKind,
+            assignment.SubjectId,
+            assignment.AssignmentScopeValue
+        }).IsUnique();
+        builder.HasIndex(assignment => new
+        {
+            assignment.SubjectKind,
+            assignment.SubjectId,
+            assignment.AssignmentScopeValue,
+            assignment.ProfileId
+        });
         builder.HasOne(assignment => assignment.Profile)
             .WithMany()
             .HasForeignKey(assignment => assignment.ProfileId)

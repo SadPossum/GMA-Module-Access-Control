@@ -158,6 +158,12 @@ namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AssignmentScopeValue")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
+                        .HasColumnName("AssignmentScope");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -182,10 +188,10 @@ namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProfileId", "SubjectKind", "SubjectId")
+                    b.HasIndex("ProfileId", "SubjectKind", "SubjectId", "AssignmentScopeValue")
                         .IsUnique();
 
-                    b.HasIndex("SubjectKind", "SubjectId", "ProfileId");
+                    b.HasIndex("SubjectKind", "SubjectId", "AssignmentScopeValue", "ProfileId");
 
                     b.ToTable("access_profile_assignments", "access");
                 });
@@ -202,6 +208,11 @@ namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
 
                     b.Property<int>("ActorKind")
                         .HasColumnType("int");
+
+                    b.Property<string>("AssignmentScopeValue")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)")
+                        .HasColumnName("AssignmentScope");
 
                     b.Property<int>("Kind")
                         .HasColumnType("int");

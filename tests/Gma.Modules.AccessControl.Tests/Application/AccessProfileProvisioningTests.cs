@@ -70,8 +70,8 @@ public sealed class AccessProfileProvisioningTests
         AccessProfile otherScope = CreateProfile(ScopeB, "other", "Other");
         dbContext.AccessProfiles.AddRange(oldProfile, desiredProfile, otherScope);
         dbContext.AccessProfileAssignments.AddRange(
-            CreateAssignment(oldProfile.Id, Subject),
-            CreateAssignment(otherScope.Id, Subject));
+            CreateAssignment(oldProfile.Id, ScopeA, Subject),
+            CreateAssignment(otherScope.Id, ScopeB, Subject));
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -120,7 +120,7 @@ public sealed class AccessProfileProvisioningTests
         AccessProfile existing = CreateProfile(ScopeA, "existing", "Existing");
         AccessProfile desired = CreateProfile(ScopeA, "desired", "Desired");
         dbContext.AccessProfiles.AddRange(existing, desired);
-        dbContext.AccessProfileAssignments.Add(CreateAssignment(existing.Id, Subject));
+        dbContext.AccessProfileAssignments.Add(CreateAssignment(existing.Id, ScopeA, Subject));
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
@@ -142,6 +142,120 @@ public sealed class AccessProfileProvisioningTests
         Assert.Equal(AccessControlApplicationErrors.ProfileAssignmentRejected, result.Error);
         AccessProfileAssignment assignment = Assert.Single(dbContext.AccessProfileAssignments);
         Assert.Equal(existing.Id, assignment.ProfileId);
+    }
+
+    [Fact]
+    public async Task Scoped_reconcile_is_idempotent_and_legacy_reconcile_leaves_descendant_targets_untouched()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessScope propertyA = AccessScope.Parse("tenant:tenant-a/property:property-a");
+        AccessScope propertyB = AccessScope.Parse("tenant:tenant-a/property:property-b");
+        AccessProfile profile = CreateProfile(ScopeA, "front-desk", "Front desk");
+        dbContext.AccessProfiles.Add(profile);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        SequenceIdGenerator ids = new();
+        AccessProfileRepository profiles = new(dbContext);
+        AccessControlRbacRepository rbac = new(dbContext, ids, new ExactScopeMatchOptionsResolver());
+        ReconcileScopedAccessProfileAssignmentsCommandHandler scopedHandler = new(
+            profiles,
+            rbac,
+            CreatePermissionPolicy(new RecordingAuthorization()),
+            new AccessProfileAssignmentPolicy([]),
+            ids,
+            new FixedClock(Now.AddMinutes(1)));
+        AccessProfileAssignmentTarget[] targets =
+        [
+            new(profile.Id, propertyA),
+            new(profile.Id, propertyB)
+        ];
+
+        Result<ScopedAccessProfileAssignmentReconciliationDetails> result = await scopedHandler.HandleAsync(
+            new ReconcileScopedAccessProfileAssignmentsCommand(Subject, ScopeA, targets, Actor),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+        Result<ScopedAccessProfileAssignmentReconciliationDetails> replay = await scopedHandler.HandleAsync(
+            new ReconcileScopedAccessProfileAssignmentsCommand(Subject, ScopeA, targets, Actor),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value.AssignedCount);
+        Assert.Equal(0, result.Value.UnassignedCount);
+        Assert.True(replay.IsSuccess);
+        Assert.Equal(0, replay.Value.AssignedCount);
+        Assert.Equal(0, replay.Value.UnassignedCount);
+
+        ReconcileAccessProfileAssignmentsCommandHandler legacyHandler = new(
+            profiles,
+            rbac,
+            CreatePermissionPolicy(new RecordingAuthorization()),
+            new AccessProfileAssignmentPolicy([]),
+            ids,
+            new FixedClock(Now.AddMinutes(2)));
+        Result<AccessProfileAssignmentReconciliationDetails> legacy = await legacyHandler.HandleAsync(
+            new ReconcileAccessProfileAssignmentsCommand(Subject, ScopeA, [], Actor),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.True(legacy.IsSuccess);
+        Assert.Equal(0, legacy.Value.UnassignedCount);
+        Assert.Equal(2, await dbContext.AccessProfileAssignments.CountAsync());
+
+        Result<ScopedAccessProfileAssignmentReconciliationDetails> narrowed = await scopedHandler.HandleAsync(
+            new ReconcileScopedAccessProfileAssignmentsCommand(
+                Subject,
+                ScopeA,
+                [new AccessProfileAssignmentTarget(profile.Id, propertyB)],
+                Actor),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.True(narrowed.IsSuccess);
+        Assert.Equal(0, narrowed.Value.AssignedCount);
+        Assert.Equal(1, narrowed.Value.UnassignedCount);
+        AccessProfileAssignment remaining = Assert.Single(dbContext.AccessProfileAssignments);
+        Assert.Equal(propertyB.Value, remaining.AssignmentScopeValue);
+        string[] historyScopes = await dbContext.AccessProfileChanges
+            .Where(change => change.SubjectId == Subject.Id)
+            .OrderBy(change => change.OccurredAtUtc)
+            .ThenBy(change => change.Id)
+            .Select(change => change.AssignmentScopeValue!)
+            .ToArrayAsync();
+        Assert.Equal(3, historyScopes.Length);
+        string[] expectedScopes = [propertyA.Value, propertyB.Value];
+        Assert.All(historyScopes, scope => Assert.Contains(scope, expectedScopes));
+    }
+
+    [Fact]
+    public async Task Scoped_reconcile_rejects_unrelated_assignment_scope_without_writing()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessProfile profile = CreateProfile(ScopeA, "front-desk", "Front desk");
+        dbContext.AccessProfiles.Add(profile);
+        await dbContext.SaveChangesAsync();
+        SequenceIdGenerator ids = new();
+        AccessProfileRepository profiles = new(dbContext);
+        ReconcileScopedAccessProfileAssignmentsCommandHandler handler = new(
+            profiles,
+            new AccessControlRbacRepository(dbContext, ids, new ExactScopeMatchOptionsResolver()),
+            CreatePermissionPolicy(new RecordingAuthorization()),
+            new AccessProfileAssignmentPolicy([]),
+            ids,
+            new FixedClock(Now.AddMinutes(1)));
+
+        Result<ScopedAccessProfileAssignmentReconciliationDetails> result = await handler.HandleAsync(
+            new ReconcileScopedAccessProfileAssignmentsCommand(
+                Subject,
+                ScopeA,
+                [new AccessProfileAssignmentTarget(profile.Id, ScopeB)],
+                Actor),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(AccessControlApplicationErrors.ProfileAssignmentScopeInvalid, result.Error);
+        Assert.Empty(dbContext.AccessProfileAssignments);
     }
 
     private static AccessControlDbContext CreateDbContext()
@@ -168,10 +282,13 @@ public sealed class AccessProfileProvisioningTests
         return result.Value;
     }
 
-    private static AccessProfileAssignment CreateAssignment(Guid profileId, AccessSubject subject)
+    private static AccessProfileAssignment CreateAssignment(
+        Guid profileId,
+        AccessScope assignmentScope,
+        AccessSubject subject)
     {
         Result<AccessProfileAssignment> result = AccessProfileAssignment.Create(
-            Guid.NewGuid(), profileId, ToDomain(subject), ToDomain(Actor), Now);
+            Guid.NewGuid(), profileId, assignmentScope.Value, ToDomain(subject), ToDomain(Actor), Now);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

@@ -744,8 +744,7 @@ internal sealed class AccessControlRbacRepository(
         if (candidateScopeValues is not null)
         {
             profileAssignments = profileAssignments.Where(assignment =>
-                assignment.Profile != null &&
-                candidateScopeValues.Contains(assignment.Profile.OwnerScopeValue));
+                candidateScopeValues.Contains(assignment.AssignmentScopeValue));
         }
 
         IQueryable<Gma.Modules.AccessControl.Domain.Entities.AccessProfilePermission> profilePermissions =
@@ -760,7 +759,7 @@ internal sealed class AccessControlRbacRepository(
             {
                 SubjectKind = assignment.SubjectKind,
                 SubjectId = assignment.SubjectId,
-                ScopeValue = assignment.Profile!.OwnerScopeValue,
+                ScopeValue = assignment.AssignmentScopeValue,
                 PermissionCode = permissionGrant.PermissionCode
             });
 

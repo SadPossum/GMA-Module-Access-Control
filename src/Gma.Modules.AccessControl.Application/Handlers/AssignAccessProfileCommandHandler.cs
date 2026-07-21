@@ -22,6 +22,14 @@ internal sealed class AssignAccessProfileCommandHandler(
         AssignAccessProfileCommand command,
         CancellationToken cancellationToken)
     {
+        Result scopeValidation = AccessProfileAssignmentScopePolicy.Validate(
+            command.OwnerScope,
+            command.AssignmentScope);
+        if (scopeValidation.IsFailure)
+        {
+            return Result.Failure<AccessProfileAssignmentDetails>(scopeValidation.Error);
+        }
+
         AccessProfile? profile = await profiles
             .GetAsync(command.ProfileId, command.OwnerScope, tracking: true, cancellationToken)
             .ConfigureAwait(false);
@@ -33,7 +41,7 @@ internal sealed class AssignAccessProfileCommandHandler(
 
         Result delegation = await permissionPolicy.ValidateDelegationAsync(
             command.Actor,
-            command.OwnerScope,
+            command.AssignmentScope,
             profile.Permissions.Select(permission => permission.PermissionCode).ToArray(),
             cancellationToken).ConfigureAwait(false);
         if (delegation.IsFailure)
@@ -44,6 +52,7 @@ internal sealed class AssignAccessProfileCommandHandler(
         if (!await assignmentPolicy.IsAllowedAsync(
                 profile,
                 command.OwnerScope,
+                command.AssignmentScope,
                 command.Actor,
                 command.Subject,
                 cancellationToken)
@@ -53,7 +62,11 @@ internal sealed class AssignAccessProfileCommandHandler(
                 AccessControlApplicationErrors.ProfileAssignmentRejected);
         }
 
-        if (await profiles.AssignmentExistsAsync(profile.Id, command.Subject, cancellationToken).ConfigureAwait(false))
+        if (await profiles.AssignmentExistsAsync(
+                profile.Id,
+                command.Subject,
+                command.AssignmentScope,
+                cancellationToken).ConfigureAwait(false))
         {
             return Result.Failure<AccessProfileAssignmentDetails>(AccessControlApplicationErrors.ProfileAssignmentAlreadyExists);
         }
@@ -61,6 +74,7 @@ internal sealed class AssignAccessProfileCommandHandler(
         DateTimeOffset nowUtc = clock.UtcNow;
         Result<AccessProfileAssignment> assignment = AccessProfileAssignment.Create(
             ids.NewId(), profile.Id,
+            command.AssignmentScope.Value,
             AccessProfileSubjectMappings.ToDomain(command.Subject),
             AccessProfileSubjectMappings.ToDomain(command.Actor),
             nowUtc);
@@ -72,9 +86,10 @@ internal sealed class AssignAccessProfileCommandHandler(
             ids.NewId(), AccessProfileChangeKind.Assigned,
             AccessProfileSubjectMappings.ToDomain(command.Actor),
             AccessProfileSubjectMappings.ToDomain(command.Subject),
-            nowUtc);
+            nowUtc,
+            command.AssignmentScope.Value);
         return Result.Success(new AccessProfileAssignmentDetails(
             assignment.Value.Id, profile.Id, command.Subject.Kind, command.Subject.Id,
-            command.Actor.Kind, command.Actor.Id, nowUtc));
+            command.Actor.Kind, command.Actor.Id, nowUtc, command.AssignmentScope));
     }
 }

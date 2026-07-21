@@ -92,6 +92,38 @@ public sealed class AccessProfileApiTests
         Assert.Equal(["reservations.read"], dto.Permissions);
     }
 
+    [Fact]
+    public void Api_mapping_exposes_assignment_scope_in_assignments_and_history()
+    {
+        AccessScope assignmentScope =
+            AccessScope.Parse("tenant:tenant-a/property:property-a");
+        AccessProfileAssignmentDto assignment = AccessProfileApiMappings.ToDto(
+            new AccessProfileAssignmentDetails(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                AccessSubjectKind.User,
+                "member-a",
+                AccessSubjectKind.User,
+                "owner-a",
+                DateTimeOffset.UtcNow,
+                assignmentScope));
+        AccessProfileChangeDto change = AccessProfileApiMappings.ToDto(
+            new AccessProfileChangeDetails(
+                Guid.NewGuid(),
+                assignment.ProfileId,
+                AccessProfileChangeKind.Assigned,
+                AccessSubjectKind.User,
+                "owner-a",
+                AccessSubjectKind.User,
+                "member-a",
+                1,
+                DateTimeOffset.UtcNow,
+                assignmentScope));
+
+        Assert.Equal(assignmentScope.Value, assignment.AssignmentScope);
+        Assert.Equal(assignmentScope.Value, change.AssignmentScope);
+    }
+
     private static void AssertAssurance(
         IEnumerable<RouteEndpoint> endpoints,
         string method,

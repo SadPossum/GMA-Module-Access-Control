@@ -158,12 +158,13 @@ public sealed class AccessControlApiModule : IModule
             string scope,
             string subjectKind,
             string subjectId,
+            string? assignmentScope,
             HttpContext httpContext,
             IAccessHttpSubjectResolver subjects,
             IRequestDispatcher dispatcher,
             CancellationToken cancellationToken) =>
             (await UnassignProfileAsync(
-                dispatcher, profileId, scope, subjectKind, subjectId,
+                dispatcher, profileId, scope, subjectKind, subjectId, assignmentScope,
                 ResolveActor(httpContext, subjects), cancellationToken).ConfigureAwait(false))
                 .ToHttpResult(ErrorStatusCodes))
             .RequireResolvedScopePermission(AccessControlProfilePermissionCodes.Assign, AccessProfileScopeResolver.ResolverName);
@@ -204,7 +205,10 @@ public sealed class AccessControlApiModule : IModule
         long ExpectedVersion);
 
     public sealed record ArchiveAccessProfileRequest(long ExpectedVersion);
-    public sealed record AccessProfileAssignmentRequest(string SubjectKind, string SubjectId);
+    public sealed record AccessProfileAssignmentRequest(
+        string SubjectKind,
+        string SubjectId,
+        string? AssignmentScope = null);
 
     private static Task<Result<AccessControlPage<AccessProfileDto>>> ListProfilesAsync(
         IRequestDispatcher dispatcher,
@@ -295,10 +299,11 @@ public sealed class AccessControlApiModule : IModule
         AccessSubject? actor,
         CancellationToken cancellationToken) =>
         TryScopeAndActor(scope, actor, out AccessScope? ownerScope, out AccessSubject? resolvedActor) &&
+        TryAssignmentScope(request.AssignmentScope, ownerScope, out AccessScope? assignmentScope) &&
         AccessSubjectKindNames.TryCreate(request.SubjectKind, request.SubjectId, out AccessSubject? subject)
             ? MapAsync(
                 dispatcher.SendAsync(new AssignAccessProfileCommand(
-                    profileId, ownerScope, subject, resolvedActor), cancellationToken),
+                    profileId, ownerScope, assignmentScope, subject, resolvedActor), cancellationToken),
                 AccessProfileApiMappings.ToDto)
             : InvalidScopeOrActor<AccessProfileAssignmentDto>();
 
@@ -308,12 +313,14 @@ public sealed class AccessControlApiModule : IModule
         string scope,
         string subjectKind,
         string subjectId,
+        string? assignmentScopeValue,
         AccessSubject? actor,
         CancellationToken cancellationToken) =>
         TryScopeAndActor(scope, actor, out AccessScope? ownerScope, out AccessSubject? resolvedActor) &&
+        TryAssignmentScope(assignmentScopeValue, ownerScope, out AccessScope? assignmentScope) &&
         AccessSubjectKindNames.TryCreate(subjectKind, subjectId, out AccessSubject? subject)
             ? dispatcher.SendAsync(new UnassignAccessProfileCommand(
-                profileId, ownerScope, subject, resolvedActor), cancellationToken)
+                profileId, ownerScope, assignmentScope, subject, resolvedActor), cancellationToken)
             : InvalidScopeOrActor<Unit>();
 
     private static Task<Result<AccessControlPage<AccessProfileChangeDto>>> ListHistoryAsync(
@@ -335,6 +342,20 @@ public sealed class AccessControlApiModule : IModule
 
     private static bool TryScope(string value, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out AccessScope? scope) =>
         AccessScope.TryParse(value, out scope) && !scope.IsGlobal;
+
+    private static bool TryAssignmentScope(
+        string? value,
+        AccessScope ownerScope,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out AccessScope? assignmentScope)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            assignmentScope = ownerScope;
+            return true;
+        }
+
+        return TryScope(value, out assignmentScope);
+    }
 
     private static bool TryScopeAndActor(
         string value,

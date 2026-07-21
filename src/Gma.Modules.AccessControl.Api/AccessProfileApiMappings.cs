@@ -28,7 +28,8 @@ internal static class AccessProfileApiMappings
             assignment.SubjectId,
             AccessSubjectKindNames.GetName(assignment.CreatedByKind),
             assignment.CreatedById,
-            assignment.CreatedAtUtc);
+            assignment.CreatedAtUtc,
+            assignment.AssignmentScope.Value);
 
     public static AccessProfileChangeDto ToDto(AccessProfileChangeDetails change) =>
         new(
@@ -40,7 +41,8 @@ internal static class AccessProfileApiMappings
             change.SubjectKind.HasValue ? AccessSubjectKindNames.GetName(change.SubjectKind.Value) : null,
             change.SubjectId,
             change.ProfileVersion,
-            change.OccurredAtUtc);
+            change.OccurredAtUtc,
+            change.AssignmentScope?.Value);
 
     public static AccessControlPage<TTarget> ToPage<TSource, TTarget>(
         AccessControlPage<TSource> page,

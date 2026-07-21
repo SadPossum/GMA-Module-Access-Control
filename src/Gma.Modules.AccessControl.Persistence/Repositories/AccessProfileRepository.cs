@@ -70,7 +70,8 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
                 on profile.Id equals assignment.ProfileId
             where profile.OwnerScopeValue == ownerScopeValue &&
                   assignment.SubjectKind == subjectKind &&
-                  assignment.SubjectId == subjectId
+                  assignment.SubjectId == subjectId &&
+                  assignment.AssignmentScopeValue == ownerScopeValue
             select profile;
 
         AccessProfileDetailsProjection[] profiles = await this.ProjectDetails(assignedProfiles
@@ -78,6 +79,56 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
                 .ThenBy(profile => profile.Id))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return profiles.Select(ToDetails).ToArray();
+    }
+
+    public async Task<IReadOnlyList<ScopedAccessProfileAssignmentDetails>> ListScopedDetailsForSubjectAsync(
+        AccessSubject subject,
+        AccessScope ownerScope,
+        CancellationToken cancellationToken)
+    {
+        int subjectKind = (int)subject.Kind;
+        string subjectId = subject.Id;
+        string ownerScopeValue = ownerScope.Value;
+        ScopedAccessProfileAssignmentProjection[] persisted = await dbContext.AccessProfileAssignments
+            .AsNoTracking()
+            .Where(assignment =>
+                assignment.SubjectKind == subjectKind &&
+                assignment.SubjectId == subjectId &&
+                assignment.Profile != null &&
+                assignment.Profile.OwnerScopeValue == ownerScopeValue)
+            .OrderBy(assignment => assignment.AssignmentScopeValue)
+            .ThenBy(assignment => assignment.Profile!.Key)
+            .ThenBy(assignment => assignment.ProfileId)
+            .Select(assignment => new ScopedAccessProfileAssignmentProjection(
+                assignment.ProfileId,
+                assignment.Profile!.OwnerScopeValue,
+                assignment.Profile.Key,
+                assignment.Profile.DisplayName,
+                assignment.Profile.Description,
+                assignment.Profile.Status,
+                assignment.Profile.Version,
+                assignment.Profile.Permissions.OrderBy(permission => permission.PermissionCode)
+                    .Select(permission => permission.PermissionCode).ToArray(),
+                dbContext.AccessProfileAssignments.Count(candidate => candidate.ProfileId == assignment.ProfileId),
+                assignment.Profile.CreatedAtUtc,
+                assignment.Profile.LastChangedAtUtc,
+                assignment.AssignmentScopeValue))
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return persisted.Select(assignment => new ScopedAccessProfileAssignmentDetails(
+            ToDetails(new AccessProfileDetailsProjection(
+                assignment.ProfileId,
+                assignment.OwnerScopeValue,
+                assignment.Key,
+                assignment.DisplayName,
+                assignment.Description,
+                assignment.Status,
+                assignment.Version,
+                assignment.Permissions,
+                assignment.AssignmentCount,
+                assignment.CreatedAtUtc,
+                assignment.LastChangedAtUtc)),
+            AccessScope.Parse(assignment.AssignmentScopeValue))).ToArray();
     }
 
     public async Task<IReadOnlyList<AccessProfile>> ListTrackedAsync(
@@ -103,38 +154,51 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
     public Task<bool> AssignmentExistsAsync(
         Guid profileId,
         AccessSubject subject,
+        AccessScope assignmentScope,
         CancellationToken cancellationToken) =>
         dbContext.AccessProfileAssignments.AnyAsync(
             assignment => assignment.ProfileId == profileId &&
                           assignment.SubjectKind == (int)subject.Kind &&
-                          assignment.SubjectId == subject.Id,
+                          assignment.SubjectId == subject.Id &&
+                          assignment.AssignmentScopeValue == assignmentScope.Value,
             cancellationToken);
 
     public Task<AccessProfileAssignment?> GetAssignmentAsync(
         Guid profileId,
         AccessSubject subject,
+        AccessScope assignmentScope,
         CancellationToken cancellationToken) =>
         dbContext.AccessProfileAssignments.SingleOrDefaultAsync(
             assignment => assignment.ProfileId == profileId &&
                           assignment.SubjectKind == (int)subject.Kind &&
-                          assignment.SubjectId == subject.Id,
+                          assignment.SubjectId == subject.Id &&
+                          assignment.AssignmentScopeValue == assignmentScope.Value,
             cancellationToken);
 
     public async Task<IReadOnlyList<AccessProfileAssignment>> ListTrackedAssignmentsAsync(
         AccessSubject subject,
         AccessScope ownerScope,
+        AccessScope? assignmentScope,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(subject);
         ArgumentNullException.ThrowIfNull(ownerScope);
-        return await dbContext.AccessProfileAssignments
+        IQueryable<AccessProfileAssignment> assignments = dbContext.AccessProfileAssignments
             .Include(assignment => assignment.Profile)
             .Where(assignment =>
                 assignment.SubjectKind == (int)subject.Kind &&
                 assignment.SubjectId == subject.Id &&
                 assignment.Profile != null &&
-                assignment.Profile.OwnerScopeValue == ownerScope.Value)
+                assignment.Profile.OwnerScopeValue == ownerScope.Value);
+        if (assignmentScope is not null)
+        {
+            assignments = assignments.Where(assignment =>
+                assignment.AssignmentScopeValue == assignmentScope.Value);
+        }
+
+        return await assignments
             .OrderBy(assignment => assignment.ProfileId)
+            .ThenBy(assignment => assignment.AssignmentScopeValue)
             .ThenBy(assignment => assignment.Id)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -184,16 +248,19 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
                                  assignment.Profile.OwnerScopeValue == ownerScope.Value)
             .OrderBy(assignment => assignment.SubjectKind)
             .ThenBy(assignment => assignment.SubjectId)
+            .ThenBy(assignment => assignment.AssignmentScopeValue)
             .ThenBy(assignment => assignment.Id)
             .Skip(pageRequest.SkipCount)
             .Take(pageRequest.PageSize + 1)
             .Select(assignment => new AccessProfileAssignmentProjection(
                 assignment.Id, assignment.ProfileId, assignment.SubjectKind, assignment.SubjectId,
-                assignment.CreatedByKind, assignment.CreatedById, assignment.CreatedAtUtc))
+                assignment.CreatedByKind, assignment.CreatedById, assignment.CreatedAtUtc,
+                assignment.AssignmentScopeValue))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         AccessProfileAssignmentDetails[] rows = persisted.Select(assignment => new AccessProfileAssignmentDetails(
             assignment.Id, assignment.ProfileId, ToSubjectKind(assignment.SubjectKind), assignment.SubjectId,
-            ToSubjectKind(assignment.CreatedByKind), assignment.CreatedById, assignment.CreatedAtUtc)).ToArray();
+            ToSubjectKind(assignment.CreatedByKind), assignment.CreatedById, assignment.CreatedAtUtc,
+            AccessScope.Parse(assignment.AssignmentScopeValue))).ToArray();
         return Page(rows, pageRequest);
     }
 
@@ -214,13 +281,15 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
             .Take(pageRequest.PageSize + 1)
             .Select(change => new AccessProfileChangeProjection(
                 change.Id, change.ProfileId, change.Kind, change.ActorKind, change.ActorId,
-                change.SubjectKind, change.SubjectId, change.ProfileVersion, change.OccurredAtUtc))
+                change.SubjectKind, change.SubjectId, change.ProfileVersion, change.OccurredAtUtc,
+                change.AssignmentScopeValue))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         AccessProfileChangeDetails[] rows = persisted.Select(change => new AccessProfileChangeDetails(
             change.Id, change.ProfileId, ToContract(change.Kind),
             ToSubjectKind(change.ActorKind), change.ActorId,
             change.SubjectKind.HasValue ? ToSubjectKind(change.SubjectKind.Value) : null,
-            change.SubjectId, change.ProfileVersion, change.OccurredAtUtc)).ToArray();
+            change.SubjectId, change.ProfileVersion, change.OccurredAtUtc,
+            change.AssignmentScopeValue is null ? null : AccessScope.Parse(change.AssignmentScopeValue))).ToArray();
         return Page(rows, pageRequest);
     }
 
@@ -285,7 +354,22 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
 
     private sealed record AccessProfileAssignmentProjection(
         Guid Id, Guid ProfileId, int SubjectKind, string SubjectId,
-        int CreatedByKind, string CreatedById, DateTimeOffset CreatedAtUtc);
+        int CreatedByKind, string CreatedById, DateTimeOffset CreatedAtUtc,
+        string AssignmentScopeValue);
+
+    private sealed record ScopedAccessProfileAssignmentProjection(
+        Guid ProfileId,
+        string OwnerScopeValue,
+        string Key,
+        string DisplayName,
+        string Description,
+        DomainStatus Status,
+        long Version,
+        string[] Permissions,
+        int AssignmentCount,
+        DateTimeOffset CreatedAtUtc,
+        DateTimeOffset LastChangedAtUtc,
+        string AssignmentScopeValue);
 
     private sealed record AccessProfileDetailsProjection(
         Guid Id,
@@ -302,5 +386,6 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
 
     private sealed record AccessProfileChangeProjection(
         Guid Id, Guid ProfileId, DomainChangeKind Kind, int ActorKind, string ActorId,
-        int? SubjectKind, string? SubjectId, long ProfileVersion, DateTimeOffset OccurredAtUtc);
+        int? SubjectKind, string? SubjectId, long ProfileVersion, DateTimeOffset OccurredAtUtc,
+        string? AssignmentScopeValue);
 }

@@ -12,12 +12,14 @@ public sealed class AccessProfileAssignment
     private AccessProfileAssignment(
         Guid id,
         Guid profileId,
+        AccessProfileAssignmentScope assignmentScope,
         AccessProfileSubject subject,
         AccessProfileSubject actor,
         DateTimeOffset createdAtUtc)
     {
         this.Id = id;
         this.ProfileId = profileId;
+        this.AssignmentScopeValue = assignmentScope.Value;
         this.SubjectKind = (int)subject.Kind;
         this.SubjectId = subject.Id;
         this.CreatedByKind = (int)actor.Kind;
@@ -27,6 +29,7 @@ public sealed class AccessProfileAssignment
 
     public Guid Id { get; private set; }
     public Guid ProfileId { get; private set; }
+    public string AssignmentScopeValue { get; private set; } = string.Empty;
     public int SubjectKind { get; private set; }
     public string SubjectId { get; private set; } = string.Empty;
     public int CreatedByKind { get; private set; }
@@ -37,6 +40,7 @@ public sealed class AccessProfileAssignment
     public static Result<AccessProfileAssignment> Create(
         Guid id,
         Guid profileId,
+        string? assignmentScopeValue,
         AccessProfileSubject? subject,
         AccessProfileSubject? actor,
         DateTimeOffset createdAtUtc)
@@ -51,11 +55,24 @@ public sealed class AccessProfileAssignment
             return Result.Failure<AccessProfileAssignment>(AccessProfileDomainErrors.IdRequired);
         }
 
+        Result<AccessProfileAssignmentScope> assignmentScope =
+            AccessProfileAssignmentScope.Create(assignmentScopeValue);
+        if (assignmentScope.IsFailure)
+        {
+            return Result.Failure<AccessProfileAssignment>(assignmentScope.Error);
+        }
+
         if (subject is null || actor is null)
         {
             return Result.Failure<AccessProfileAssignment>(AccessProfileDomainErrors.ActorInvalid);
         }
 
-        return Result.Success(new AccessProfileAssignment(id, profileId, subject, actor, createdAtUtc));
+        return Result.Success(new AccessProfileAssignment(
+            id,
+            profileId,
+            assignmentScope.Value,
+            subject,
+            actor,
+            createdAtUtc));
     }
 }

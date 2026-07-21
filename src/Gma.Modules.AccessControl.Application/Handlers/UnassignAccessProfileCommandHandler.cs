@@ -19,13 +19,21 @@ internal sealed class UnassignAccessProfileCommandHandler(
         UnassignAccessProfileCommand command,
         CancellationToken cancellationToken)
     {
+        Result scopeValidation = AccessProfileAssignmentScopePolicy.Validate(
+            command.OwnerScope,
+            command.AssignmentScope);
+        if (scopeValidation.IsFailure)
+        {
+            return Result.Failure<Unit>(scopeValidation.Error);
+        }
+
         AccessProfile? profile = await repository
             .GetAsync(command.ProfileId, command.OwnerScope, tracking: true, cancellationToken)
             .ConfigureAwait(false);
         if (profile is null) return Result.Failure<Unit>(AccessControlApplicationErrors.ProfileNotFound);
 
         AccessProfileAssignment? assignment = await repository
-            .GetAssignmentAsync(profile.Id, command.Subject, cancellationToken)
+            .GetAssignmentAsync(profile.Id, command.Subject, command.AssignmentScope, cancellationToken)
             .ConfigureAwait(false);
         if (assignment is null) return Result.Failure<Unit>(AccessControlApplicationErrors.ProfileAssignmentNotFound);
 
@@ -34,7 +42,8 @@ internal sealed class UnassignAccessProfileCommandHandler(
             ids.NewId(), AccessProfileChangeKind.Unassigned,
             AccessProfileSubjectMappings.ToDomain(command.Actor),
             AccessProfileSubjectMappings.ToDomain(command.Subject),
-            clock.UtcNow);
+            clock.UtcNow,
+            assignment.AssignmentScopeValue);
         return Result.Success(Unit.Value);
     }
 }

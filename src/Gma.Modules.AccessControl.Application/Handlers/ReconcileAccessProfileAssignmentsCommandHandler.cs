@@ -31,6 +31,14 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
                 AccessControlApplicationErrors.ProfileNotFound);
         }
 
+        Result scopeValidation = AccessProfileAssignmentScopePolicy.Validate(
+            command.OwnerScope,
+            command.AssignmentScope);
+        if (scopeValidation.IsFailure)
+        {
+            return Result.Failure<AccessProfileAssignmentReconciliationDetails>(scopeValidation.Error);
+        }
+
         Guid[] desiredIds = command.ProfileIds.Distinct().Order().ToArray();
         if (desiredIds.Length > MaxProfileCount || desiredIds.Any(id => id == Guid.Empty))
         {
@@ -52,7 +60,7 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
         {
             Result delegation = await permissionPolicy.ValidateDelegationAsync(
                 command.Actor,
-                command.OwnerScope,
+                command.AssignmentScope,
                 profile.Permissions.Select(permission => permission.PermissionCode).ToArray(),
                 cancellationToken).ConfigureAwait(false);
             if (delegation.IsFailure)
@@ -63,6 +71,7 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
             if (!await assignmentPolicy.IsAllowedAsync(
                     profile,
                     command.OwnerScope,
+                    command.AssignmentScope,
                     command.Actor,
                     command.Subject,
                     cancellationToken)
@@ -74,7 +83,11 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
         }
 
         IReadOnlyList<AccessProfileAssignment> currentAssignments = await profiles
-            .ListTrackedAssignmentsAsync(command.Subject, command.OwnerScope, cancellationToken)
+            .ListTrackedAssignmentsAsync(
+                command.Subject,
+                command.OwnerScope,
+                command.AssignmentScope,
+                cancellationToken)
             .ConfigureAwait(false);
         HashSet<Guid> desiredSet = desiredIds.ToHashSet();
         HashSet<Guid> currentIds = currentAssignments.Select(assignment => assignment.ProfileId).ToHashSet();
@@ -93,7 +106,8 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
                 AccessProfileChangeKind.Unassigned,
                 AccessProfileSubjectMappings.ToDomain(command.Actor),
                 AccessProfileSubjectMappings.ToDomain(command.Subject),
-                nowUtc);
+                nowUtc,
+                assignment.AssignmentScopeValue);
             profiles.RemoveAssignment(assignment);
         }
 
@@ -107,6 +121,7 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
             Result<AccessProfileAssignment> assignment = AccessProfileAssignment.Create(
                 ids.NewId(),
                 profile.Id,
+                command.AssignmentScope.Value,
                 AccessProfileSubjectMappings.ToDomain(command.Subject),
                 AccessProfileSubjectMappings.ToDomain(command.Actor),
                 nowUtc);
@@ -121,7 +136,8 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
                 AccessProfileChangeKind.Assigned,
                 AccessProfileSubjectMappings.ToDomain(command.Actor),
                 AccessProfileSubjectMappings.ToDomain(command.Subject),
-                nowUtc);
+                nowUtc,
+                command.AssignmentScope.Value);
         }
 
         return Result.Success(new AccessProfileAssignmentReconciliationDetails(

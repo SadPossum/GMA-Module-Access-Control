@@ -9,4 +9,5 @@ public sealed record AccessProfileAssignmentDetails(
     string SubjectId,
     AccessSubjectKind CreatedByKind,
     string CreatedById,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    AccessScope AssignmentScope);

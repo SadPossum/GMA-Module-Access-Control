@@ -12,8 +12,29 @@ using Xunit;
 public sealed class AccessProfileAssignmentPolicyTests
 {
     private static readonly AccessScope Scope = AccessScope.Parse("tenant:tenant-a");
+    private static readonly AccessScope PropertyScope =
+        AccessScope.Parse("tenant:tenant-a/property:property-a");
     private static readonly AccessSubject Actor = AccessSubject.User("actor-a");
     private static readonly AccessSubject Subject = AccessSubject.User("subject-a");
+
+    [Theory]
+    [InlineData("tenant:tenant-a", "tenant:tenant-a", true)]
+    [InlineData("tenant:tenant-a", "tenant:tenant-a/property:property-a", true)]
+    [InlineData("tenant:tenant-a/property:property-a", "tenant:tenant-a", false)]
+    [InlineData("tenant:tenant-a", "tenant:tenant-b/property:property-a", false)]
+    [InlineData("tenant:tenant-a", "global", false)]
+    [InlineData("global", "tenant:tenant-a", false)]
+    public void Assignment_scope_must_be_the_non_global_owner_scope_or_its_descendant(
+        string ownerScope,
+        string assignmentScope,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            AccessProfileAssignmentScopePolicy.Validate(
+                AccessScope.Parse(ownerScope),
+                AccessScope.Parse(assignmentScope)).IsSuccess);
+    }
 
     [Fact]
     public async Task Assignment_policy_allows_when_no_product_policy_is_registered()
@@ -21,7 +42,7 @@ public sealed class AccessProfileAssignmentPolicyTests
         AccessProfileAssignmentPolicy policy = new([]);
 
         bool allowed = await policy.IsAllowedAsync(
-            CreateProfile(), Scope, Actor, Subject, CancellationToken.None);
+            CreateProfile(), Scope, PropertyScope, Actor, Subject, CancellationToken.None);
 
         Assert.True(allowed);
     }
@@ -35,12 +56,13 @@ public sealed class AccessProfileAssignmentPolicyTests
         AccessProfileAssignmentPolicy policy = new([allowing, denying, unreachable]);
 
         bool allowed = await policy.IsAllowedAsync(
-            CreateProfile(), Scope, Actor, Subject, CancellationToken.None);
+            CreateProfile(), Scope, PropertyScope, Actor, Subject, CancellationToken.None);
 
         Assert.False(allowed);
         AccessProfileAssignmentPolicyContext context = Assert.Single(allowing.Contexts);
         Assert.Equal("front-desk", context.ProfileKey);
         Assert.Equal(Scope, context.OwnerScope);
+        Assert.Equal(PropertyScope, context.AssignmentScope);
         Assert.Equal(Actor, context.Actor);
         Assert.Equal(Subject, context.Subject);
         Assert.Equal(["reservations.read"], context.Permissions);

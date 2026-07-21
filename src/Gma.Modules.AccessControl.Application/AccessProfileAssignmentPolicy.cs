@@ -6,9 +6,18 @@ using Gma.Modules.AccessControl.Domain.Aggregates;
 
 internal sealed class AccessProfileAssignmentPolicy(IEnumerable<IAccessProfileAssignmentPolicy> policies)
 {
+    public Task<bool> IsAllowedAsync(
+        AccessProfile profile,
+        AccessScope ownerScope,
+        AccessSubject actor,
+        AccessSubject subject,
+        CancellationToken cancellationToken) =>
+        this.IsAllowedAsync(profile, ownerScope, ownerScope, actor, subject, cancellationToken);
+
     public async Task<bool> IsAllowedAsync(
         AccessProfile profile,
         AccessScope ownerScope,
+        AccessScope assignmentScope,
         AccessSubject actor,
         AccessSubject subject,
         CancellationToken cancellationToken)
@@ -20,7 +29,8 @@ internal sealed class AccessProfileAssignmentPolicy(IEnumerable<IAccessProfileAs
             ownerScope,
             actor,
             subject,
-            profile.Permissions.Select(permission => permission.PermissionCode).ToArray());
+            profile.Permissions.Select(permission => permission.PermissionCode).ToArray(),
+            assignmentScope);
         foreach (IAccessProfileAssignmentPolicy policy in policies)
         {
             if (!await policy.IsAllowedAsync(context, cancellationToken).ConfigureAwait(false))

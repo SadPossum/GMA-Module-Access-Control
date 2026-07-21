@@ -144,7 +144,8 @@ public sealed class AccessProfile : AggregateRoot<Guid>
         AccessProfileChangeKind kind,
         AccessProfileSubject actor,
         AccessProfileSubject subject,
-        DateTimeOffset nowUtc)
+        DateTimeOffset nowUtc,
+        string? assignmentScopeValue = null)
     {
         if (eventId == Guid.Empty)
         {
@@ -156,8 +157,15 @@ public sealed class AccessProfile : AggregateRoot<Guid>
             throw new ArgumentException("The change kind must describe an assignment mutation.", nameof(kind));
         }
 
+        Result<AccessProfileAssignmentScope> assignmentScope =
+            AccessProfileAssignmentScope.Create(assignmentScopeValue ?? this.OwnerScopeValue);
+        if (assignmentScope.IsFailure)
+        {
+            throw new ArgumentException(assignmentScope.Error.Message, nameof(assignmentScopeValue));
+        }
+
         AccessProfileChange change = new(
-            eventId, this.Id, kind, actor, this.Version, nowUtc, subject);
+            eventId, this.Id, kind, actor, this.Version, nowUtc, subject, assignmentScope.Value);
         this.changes.Add(change);
         return change;
     }

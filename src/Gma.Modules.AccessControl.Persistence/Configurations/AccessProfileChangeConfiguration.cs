@@ -16,6 +16,9 @@ internal sealed class AccessProfileChangeConfiguration : IEntityTypeConfiguratio
         builder.Property(change => change.ActorKind).IsRequired();
         builder.Property(change => change.ActorId).HasMaxLength(AccessSubject.IdMaxLength).IsRequired();
         builder.Property(change => change.SubjectId).HasMaxLength(AccessSubject.IdMaxLength);
+        builder.Property(change => change.AssignmentScopeValue)
+            .HasColumnName("AssignmentScope")
+            .HasMaxLength(AccessScope.MaxLength);
         builder.Property(change => change.ProfileVersion).IsRequired();
         builder.Property(change => change.OccurredAtUtc).IsRequired();
         builder.HasIndex(change => new { change.ProfileId, change.OccurredAtUtc, change.Id });

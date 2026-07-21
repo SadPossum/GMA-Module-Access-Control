@@ -9,4 +9,5 @@ public sealed record AccessProfileChangeDto(
     string? SubjectKind,
     string? SubjectId,
     long ProfileVersion,
-    DateTimeOffset OccurredAtUtc);
+    DateTimeOffset OccurredAtUtc,
+    string? AssignmentScope);
