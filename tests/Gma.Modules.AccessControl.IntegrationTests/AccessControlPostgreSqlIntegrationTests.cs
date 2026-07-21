@@ -195,6 +195,50 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     }
 
     [DockerFact]
+    public async Task Profile_provisioner_reads_subject_assignments_with_scope_isolation()
+    {
+        await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_profile_assignment_read_tests");
+        await postgreSql.StartAsync();
+        string connectionString = postgreSql.GetConnectionString();
+        await MigrateAsync(connectionString);
+        AccessScope otherTenantScope = AccessScope.Parse("tenant:tenant-b");
+        AccessSubject subject = AccessSubject.User("user-a");
+        AccessProfile assignedProfile = CreateProfile(TenantScope, "front-desk", ["reservations.read"]);
+        AccessProfile unassignedProfile = CreateProfile(TenantScope, "manager", ["staff.manage"]);
+        AccessProfile otherTenantProfile = CreateProfile(otherTenantScope, "front-desk", ["reservations.read"]);
+        await using (AccessControlDbContext seed = CreateDbContext(connectionString))
+        {
+            AccessControlRbacRepository rbac = CreateRbacRepository(seed);
+            await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+            seed.AccessProfiles.AddRange(assignedProfile, unassignedProfile, otherTenantProfile);
+            seed.AccessProfileAssignments.AddRange(
+                CreateAssignment(assignedProfile.Id, subject),
+                CreateAssignment(otherTenantProfile.Id, subject));
+            await seed.SaveChangesAsync();
+        }
+
+        await using AccessControlDbContext reader = CreateDbContext(connectionString);
+        AccessProfileProvisioner provisioner = new(
+            dispatcher: null!,
+            new AccessProfileRepository(reader));
+
+        AccessProfileAssignmentSet tenantAssignments = await provisioner.GetSubjectAssignmentsAsync(
+            subject, TenantScope, CancellationToken.None);
+        AccessProfileAssignmentSet otherTenantAssignments = await provisioner.GetSubjectAssignmentsAsync(
+            subject, otherTenantScope, CancellationToken.None);
+        AccessProfileAssignmentSet noAssignments = await provisioner.GetSubjectAssignmentsAsync(
+            AccessSubject.User("user-b"), TenantScope, CancellationToken.None);
+
+        AccessProfileDto tenantProfile = Assert.Single(tenantAssignments.Profiles);
+        Assert.Equal(assignedProfile.Id, tenantProfile.Id);
+        Assert.Equal(TenantScope.Value, tenantProfile.OwnerScope);
+        Assert.Equal(1, tenantProfile.AssignmentCount);
+        Assert.Equal(otherTenantProfile.Id, Assert.Single(otherTenantAssignments.Profiles).Id);
+        Assert.Empty(noAssignments.Profiles);
+        Assert.Empty(reader.ChangeTracker.Entries());
+    }
+
+    [DockerFact]
     public async Task Concurrent_profile_updates_have_one_optimistic_concurrency_winner()
     {
         await using PostgreSqlContainer postgreSql = CreatePostgreSql("access_profile_version_tests");
@@ -326,9 +370,15 @@ public sealed class AccessControlPostgreSqlIntegrationTests
     }
 
     private static AccessProfile CreateProfile(string key, IReadOnlyCollection<string> permissions)
+        => CreateProfile(TenantScope, key, permissions);
+
+    private static AccessProfile CreateProfile(
+        AccessScope ownerScope,
+        string key,
+        IReadOnlyCollection<string> permissions)
     {
         Result<AccessProfile> result = AccessProfile.Create(
-            Guid.NewGuid(), TenantScope.Value, key, key, null,
+            Guid.NewGuid(), ownerScope.Value, key, key, null,
             permissions, Actor, Guid.NewGuid(), Now);
         Assert.True(result.IsSuccess);
         return result.Value;

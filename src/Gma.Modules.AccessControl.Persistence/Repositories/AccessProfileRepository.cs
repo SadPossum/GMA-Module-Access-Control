@@ -61,14 +61,21 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
         AccessScope ownerScope,
         CancellationToken cancellationToken)
     {
-        AccessProfileDetailsProjection[] profiles = await this.ProjectDetails(dbContext.AccessProfiles.AsNoTracking()
-                .Where(profile => profile.OwnerScopeValue == ownerScope.Value &&
-                                  dbContext.AccessProfileAssignments.Any(assignment =>
-                                      assignment.ProfileId == profile.Id &&
-                                      assignment.SubjectKind == (int)subject.Kind &&
-                                      assignment.SubjectId == subject.Id)))
-            .OrderBy(profile => profile.Key)
-            .ThenBy(profile => profile.Id)
+        int subjectKind = (int)subject.Kind;
+        string subjectId = subject.Id;
+        string ownerScopeValue = ownerScope.Value;
+        IQueryable<AccessProfile> assignedProfiles =
+            from profile in dbContext.AccessProfiles.AsNoTracking()
+            join assignment in dbContext.AccessProfileAssignments.AsNoTracking()
+                on profile.Id equals assignment.ProfileId
+            where profile.OwnerScopeValue == ownerScopeValue &&
+                  assignment.SubjectKind == subjectKind &&
+                  assignment.SubjectId == subjectId
+            select profile;
+
+        AccessProfileDetailsProjection[] profiles = await this.ProjectDetails(assignedProfiles
+                .OrderBy(profile => profile.Key)
+                .ThenBy(profile => profile.Id))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return profiles.Select(ToDetails).ToArray();
     }
