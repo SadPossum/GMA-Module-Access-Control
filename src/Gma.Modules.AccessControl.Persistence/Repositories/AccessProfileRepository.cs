@@ -45,6 +45,47 @@ internal sealed class AccessProfileRepository(AccessControlDbContext dbContext) 
         return profile is null ? null : ToDetails(profile);
     }
 
+    public async Task<AccessProfileDetails?> GetDetailsByKeyAsync(
+        AccessScope ownerScope,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        AccessProfileDetailsProjection? profile = await this.ProjectDetails(dbContext.AccessProfiles.AsNoTracking()
+                .Where(profile => profile.OwnerScopeValue == ownerScope.Value && profile.Key == key))
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return profile is null ? null : ToDetails(profile);
+    }
+
+    public async Task<IReadOnlyList<AccessProfileDetails>> ListDetailsForSubjectAsync(
+        AccessSubject subject,
+        AccessScope ownerScope,
+        CancellationToken cancellationToken)
+    {
+        AccessProfileDetailsProjection[] profiles = await this.ProjectDetails(dbContext.AccessProfiles.AsNoTracking()
+                .Where(profile => profile.OwnerScopeValue == ownerScope.Value &&
+                                  dbContext.AccessProfileAssignments.Any(assignment =>
+                                      assignment.ProfileId == profile.Id &&
+                                      assignment.SubjectKind == (int)subject.Kind &&
+                                      assignment.SubjectId == subject.Id)))
+            .OrderBy(profile => profile.Key)
+            .ThenBy(profile => profile.Id)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return profiles.Select(ToDetails).ToArray();
+    }
+
+    public async Task<IReadOnlyList<AccessProfile>> ListTrackedAsync(
+        IReadOnlyCollection<Guid> profileIds,
+        AccessScope ownerScope,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.AccessProfiles
+            .Include(profile => profile.Permissions)
+            .Where(profile => profile.OwnerScopeValue == ownerScope.Value && profileIds.Contains(profile.Id))
+            .OrderBy(profile => profile.Id)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public Task<int> CountAssignmentsAsync(Guid profileId, CancellationToken cancellationToken) =>
         dbContext.AccessProfileAssignments.CountAsync(
             assignment => assignment.ProfileId == profileId,

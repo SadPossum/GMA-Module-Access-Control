@@ -11,6 +11,9 @@ internal interface IAccessProfileRepository
     Task<bool> KeyExistsAsync(AccessScope ownerScope, string key, CancellationToken cancellationToken);
     Task<AccessProfile?> GetAsync(Guid profileId, AccessScope ownerScope, bool tracking, CancellationToken cancellationToken);
     Task<AccessProfileDetails?> GetDetailsAsync(Guid profileId, AccessScope ownerScope, CancellationToken cancellationToken);
+    Task<AccessProfileDetails?> GetDetailsByKeyAsync(AccessScope ownerScope, string key, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AccessProfileDetails>> ListDetailsForSubjectAsync(AccessSubject subject, AccessScope ownerScope, CancellationToken cancellationToken);
+    Task<IReadOnlyList<AccessProfile>> ListTrackedAsync(IReadOnlyCollection<Guid> profileIds, AccessScope ownerScope, CancellationToken cancellationToken);
     Task<int> CountAssignmentsAsync(Guid profileId, CancellationToken cancellationToken);
     void Add(AccessProfile profile);
     Task<bool> AssignmentExistsAsync(Guid profileId, AccessSubject subject, CancellationToken cancellationToken);

@@ -12,6 +12,8 @@ Useful entry points:
 
 Consumers integrate through `Gma.Modules.AccessControl.Contracts`. Persistence ports in Application are module-internal seams and are not consumer APIs.
 
+The Contracts package includes profile provisioning and exact-set assignment reconciliation for product composition. The module owns generic concurrency, delegation, assignment-policy, and history mechanics; products retain their profile names, permission selections, defaults, and lifecycle policy.
+
 Hosts may configure `AccessControlApiSecurityOptions.ProfileManagementAssurance`
 with a GMA `AuthenticationAssuranceRequirement`. When configured, access-profile
 and assignment mutations require that assurance; read endpoints retain their
