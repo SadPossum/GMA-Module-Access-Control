@@ -2,7 +2,9 @@ namespace Gma.Modules.AccessControl.Application;
 
 using Gma.Framework.AccessControl;
 using Gma.Framework.Application.Composition;
+using Gma.Framework.Cqrs;
 using Gma.Framework.Permissions;
+using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +57,13 @@ public static class DependencyInjection
         services.AddGmaAccessControlPermissionPolicies(AccessControlModuleMetadata.Descriptor);
         services.TryAddScoped<PersistedAccessControlDecisionProvider>();
         services.TryAddScoped<IAccessControlRoleProvisioner, AccessControlRoleProvisioner>();
+        services.TryAddScoped<AccessRoleAssignmentPolicy>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<
+            ICommandOutcomeObserver<AssignRoleCommand, Unit>,
+            RoleAssignmentLifecycleOutcomeObserver>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<
+            ICommandOutcomeObserver<UnassignRoleCommand, Unit>,
+            RoleAssignmentLifecycleOutcomeObserver>());
         services.TryAddScoped<AccessProfilePermissionPolicy>();
         services.TryAddScoped<AccessProfileAssignmentPolicy>();
         services.TryAddScoped<IAccessProfileManager, AccessProfileManager>();

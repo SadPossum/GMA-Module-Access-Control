@@ -271,12 +271,17 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
         {
             Description = "Access scope for the assignment, such as 'global' or 'tenant:tenant-a'. Omit for global."
         };
+        Option<DateTimeOffset?> expiresAtOption = new("--expires-at-utc")
+        {
+            Description = "Optional UTC expiry for a temporary role assignment."
+        };
         Command command = new("assign", "Assign a role to an access subject.")
         {
             targetKindOption,
             targetIdOption,
             roleOption,
-            scopeOption
+            scopeOption,
+            expiresAtOption
         };
         command.SetAction((parseResult, cancellationToken) =>
         {
@@ -308,7 +313,8 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                             subjectKind,
                             parseResult.GetRequiredValue(targetIdOption),
                             parseResult.GetRequiredValue(roleOption),
-                            accessScope),
+                            accessScope,
+                            parseResult.GetValue(expiresAtOption)),
                         token).ConfigureAwait(false);
 
                     if (result.IsSuccess)
@@ -427,11 +433,16 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
         };
         Option<int> pageOption = PageOption();
         Option<int> pageSizeOption = PageSizeOption();
+        Option<bool> includeInactiveOption = new("--include-inactive")
+        {
+            Description = "Include expired and revoked assignment history."
+        };
         Command command = new("assignments", "List assignments for a role.")
         {
             roleOption,
             pageOption,
-            pageSizeOption
+            pageSizeOption,
+            includeInactiveOption
         };
         command.SetAction((parseResult, cancellationToken) =>
         {
@@ -449,7 +460,8 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                         .QueryAsync(new ListRoleAssignmentsQuery(
                             parseResult.GetRequiredValue(roleOption),
                             parseResult.GetValue(pageOption),
-                            parseResult.GetValue(pageSizeOption)), token)
+                            parseResult.GetValue(pageSizeOption),
+                            parseResult.GetValue(includeInactiveOption)), token)
                         .ConfigureAwait(false);
 
                     if (result.IsSuccess)
@@ -462,7 +474,10 @@ public sealed class AccessControlAdminCliModule : IAdminCliModule
                                 ("Subject id", assignment => assignment.SubjectId),
                                 ("Role", assignment => assignment.RoleName),
                                 ("Scope", assignment => assignment.AccessScope.Value),
-                                ("Created (UTC)", assignment => assignment.CreatedAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture))
+                                ("Status", assignment => assignment.Status.ToString()),
+                                ("Created (UTC)", assignment => assignment.CreatedAtUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture)),
+                                ("Expires (UTC)", assignment => assignment.ExpiresAtUtc?.ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty),
+                                ("Revoked (UTC)", assignment => assignment.RevokedAtUtc?.ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)
                             ]);
                     }
 

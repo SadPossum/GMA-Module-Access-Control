@@ -13,6 +13,10 @@ public static class AccessControlApplicationErrors
     public static readonly Error PermissionNotGranted = new("AccessControl.PermissionNotGranted", "The role does not have this permission.");
     public static readonly Error AssignmentAlreadyExists = new("AccessControl.AssignmentAlreadyExists", "The subject already has this role assignment.");
     public static readonly Error AssignmentNotFound = new("AccessControl.AssignmentNotFound", "The requested role assignment was not found.");
+    public static readonly Error AssignmentExpiryInvalid = new("AccessControl.AssignmentExpiryInvalid", "A role-assignment expiry must be later than the current time.");
+    public static readonly Error AssignmentRejected = new("AccessControl.AssignmentRejected", "The role assignment is not allowed by the configured policy.");
+    public static readonly Error TemporaryOwnerAssignmentNotAllowed = new("AccessControl.TemporaryOwnerAssignmentNotAllowed", "A role carrying the global owner permission cannot be assigned temporarily.");
+    public static readonly Error RolePermissionExpansionTemporaryAssignmentsExist = new("AccessControl.RolePermissionExpansionTemporaryAssignmentsExist", "A role cannot gain permissions while it has active temporary assignments.");
     public static readonly Error SubjectRequired = new("AccessControl.SubjectRequired", "An access subject id is required.");
     public static readonly Error SubjectInvalid = new("AccessControl.SubjectInvalid", "The access subject is not valid.");
     public static readonly Error RoleNameRequired = new("AccessControl.RoleNameRequired", "An access-control role name is required.");

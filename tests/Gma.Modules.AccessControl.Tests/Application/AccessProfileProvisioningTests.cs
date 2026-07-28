@@ -77,7 +77,11 @@ public sealed class AccessProfileProvisioningTests
 
         SequenceIdGenerator ids = new();
         AccessProfileRepository profiles = new(dbContext);
-        AccessControlRbacRepository rbac = new(dbContext, ids, new ExactScopeMatchOptionsResolver());
+        AccessControlRbacRepository rbac = new(
+            dbContext,
+            ids,
+            new ExactScopeMatchOptionsResolver(),
+            new FixedClock(Now));
         ReconcileAccessProfileAssignmentsCommandHandler handler = new(
             profiles,
             rbac,
@@ -128,7 +132,11 @@ public sealed class AccessProfileProvisioningTests
         AccessProfileRepository profiles = new(dbContext);
         ReconcileAccessProfileAssignmentsCommandHandler handler = new(
             profiles,
-            new AccessControlRbacRepository(dbContext, ids, new ExactScopeMatchOptionsResolver()),
+            new AccessControlRbacRepository(
+                dbContext,
+                ids,
+                new ExactScopeMatchOptionsResolver(),
+                new FixedClock(Now)),
             CreatePermissionPolicy(new RecordingAuthorization()),
             new AccessProfileAssignmentPolicy([new DenyingAssignmentPolicy()]),
             ids,
@@ -157,7 +165,11 @@ public sealed class AccessProfileProvisioningTests
 
         SequenceIdGenerator ids = new();
         AccessProfileRepository profiles = new(dbContext);
-        AccessControlRbacRepository rbac = new(dbContext, ids, new ExactScopeMatchOptionsResolver());
+        AccessControlRbacRepository rbac = new(
+            dbContext,
+            ids,
+            new ExactScopeMatchOptionsResolver(),
+            new FixedClock(Now));
         ReconcileScopedAccessProfileAssignmentsCommandHandler scopedHandler = new(
             profiles,
             rbac,
@@ -239,7 +251,11 @@ public sealed class AccessProfileProvisioningTests
         AccessProfileRepository profiles = new(dbContext);
         ReconcileScopedAccessProfileAssignmentsCommandHandler handler = new(
             profiles,
-            new AccessControlRbacRepository(dbContext, ids, new ExactScopeMatchOptionsResolver()),
+            new AccessControlRbacRepository(
+                dbContext,
+                ids,
+                new ExactScopeMatchOptionsResolver(),
+                new FixedClock(Now)),
             CreatePermissionPolicy(new RecordingAuthorization()),
             new AccessProfileAssignmentPolicy([]),
             ids,

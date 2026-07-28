@@ -15,7 +15,9 @@ internal interface IAccessControlRbacRepository
         bool allowWhenAssignmentsExist,
         CancellationToken cancellationToken);
     Task<bool> RoleExistsAsync(string roleName, CancellationToken cancellationToken);
+    Task<string[]?> FindRolePermissionsAsync(string roleName, CancellationToken cancellationToken);
     Task<bool> RoleHasPermissionAsync(string roleName, string permissionCode, CancellationToken cancellationToken);
+    Task<bool> RoleHasActiveTemporaryAssignmentsAsync(string roleName, DateTimeOffset nowUtc, CancellationToken cancellationToken);
     Task<bool> AssignmentExistsAsync(AccessSubject subject, string roleName, AccessScope scope, CancellationToken cancellationToken);
     Task<bool> HasPermissionAsync(AccessSubject subject, PermissionCode permission, AccessScope scope, CancellationToken cancellationToken);
     Task<IReadOnlyList<bool>> HasPermissionsAsync(IReadOnlyList<AccessRequirement> requirements, CancellationToken cancellationToken);
@@ -27,14 +29,26 @@ internal interface IAccessControlRbacRepository
     Task EnsureRoleDefinitionAsync(string roleName, IReadOnlyCollection<string> permissions, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);
     Task EnsureRoleAssignmentProvisionedAsync(AccessSubject subject, string roleName, AccessScope scope, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);
     Task<AccessControlRoleDetails> CreateRoleAsync(string roleName, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);
-    Task GrantRolePermissionAsync(string roleName, string permissionCode, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);
+    Task<AccessControlRolePermissionGrantPersistenceOutcome> GrantRolePermissionAsync(
+        string roleName,
+        string permissionCode,
+        DateTimeOffset createdAtUtc,
+        CancellationToken cancellationToken);
     Task AssignRoleAsync(AccessSubject subject, string roleName, AccessScope scope, DateTimeOffset createdAtUtc, CancellationToken cancellationToken);
+    Task<AccessControlRoleAssignmentPersistenceOutcome> TryAssignRoleAsync(
+        AccessSubject subject,
+        string roleName,
+        AccessScope scope,
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset? expiresAtUtc,
+        IReadOnlyCollection<string> expectedRolePermissions,
+        CancellationToken cancellationToken);
     Task<AccessControlRemovalOutcome> RevokeRolePermissionAsync(string roleName, string permissionCode, CancellationToken cancellationToken);
-    Task<AccessControlRemovalOutcome> UnassignRoleAsync(AccessSubject subject, string roleName, AccessScope scope, CancellationToken cancellationToken);
+    Task<AccessControlRemovalOutcome> UnassignRoleAsync(AccessSubject subject, string roleName, AccessScope scope, DateTimeOffset revokedAtUtc, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleDetails>> ListRolesAsync(CancellationToken cancellationToken);
     Task<AccessControlPage<AccessControlRoleDetails>> ListRolesPageAsync(PageRequest pageRequest, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(string roleName, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(string roleName, AccessScope scope, CancellationToken cancellationToken);
-    Task<AccessControlPage<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsPageAsync(string roleName, AccessScope scope, PageRequest pageRequest, CancellationToken cancellationToken);
-    Task<AccessControlPage<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsPageAsync(string roleName, PageRequest pageRequest, CancellationToken cancellationToken);
+    Task<AccessControlPage<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsPageAsync(string roleName, AccessScope scope, PageRequest pageRequest, bool includeInactive, CancellationToken cancellationToken);
+    Task<AccessControlPage<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsPageAsync(string roleName, PageRequest pageRequest, bool includeInactive, CancellationToken cancellationToken);
 }

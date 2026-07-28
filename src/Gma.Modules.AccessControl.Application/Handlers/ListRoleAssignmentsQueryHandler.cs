@@ -27,6 +27,9 @@ internal sealed class ListRoleAssignmentsQueryHandler(IAccessControlRbacReposito
         }
 
         return Result.Success(await repository.ListRoleAssignmentsPageAsync(
-            roleName, PageRequest.Normalize(query.Page, query.PageSize), cancellationToken).ConfigureAwait(false));
+            roleName,
+            PageRequest.Normalize(query.Page, query.PageSize),
+            query.IncludeInactive,
+            cancellationToken).ConfigureAwait(false));
     }
 }

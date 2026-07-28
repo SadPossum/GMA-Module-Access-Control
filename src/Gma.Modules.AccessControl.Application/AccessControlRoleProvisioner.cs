@@ -63,7 +63,12 @@ internal sealed class AccessControlRoleProvisioner(
         ArgumentNullException.ThrowIfNull(subject);
         ArgumentNullException.ThrowIfNull(scope);
         AccessControlRemovalOutcome outcome = await repository
-            .UnassignRoleAsync(subject, AccessControlRoleName.Normalize(roleName), scope, cancellationToken)
+            .UnassignRoleAsync(
+                subject,
+                AccessControlRoleName.Normalize(roleName),
+                scope,
+                clock.UtcNow,
+                cancellationToken)
             .ConfigureAwait(false);
         return outcome switch
         {
@@ -103,6 +108,7 @@ internal sealed class AccessControlRoleProvisioner(
                 AccessControlRoleName.Normalize(roleName),
                 scope,
                 request,
+                includeInactive: false,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -114,7 +120,10 @@ internal sealed class AccessControlRoleProvisioner(
                     assignment.SubjectId,
                     assignment.RoleName,
                     assignment.AccessScope,
-                    assignment.CreatedAtUtc))
+                    assignment.CreatedAtUtc,
+                    assignment.ExpiresAtUtc,
+                    assignment.RevokedAtUtc,
+                    assignment.Status))
                 .ToArray(),
             assignments.Page,
             assignments.PageSize,

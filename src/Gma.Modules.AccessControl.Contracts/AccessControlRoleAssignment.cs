@@ -8,4 +8,7 @@ public sealed record AccessControlRoleAssignment(
     string SubjectId,
     string RoleName,
     AccessScope Scope,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? ExpiresAtUtc = null,
+    DateTimeOffset? RevokedAtUtc = null,
+    AccessRoleAssignmentStatus Status = AccessRoleAssignmentStatus.Active);

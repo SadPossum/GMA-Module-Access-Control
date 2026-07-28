@@ -362,8 +362,19 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<long?>("ExpiresAtUnixMilliseconds")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("RevokedAtUnixMilliseconds")
+                        .HasColumnType("bigint");
+
                     b.Property<Guid>("RoleId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ScopeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("ScopeValue")
                         .IsRequired()
@@ -381,12 +392,17 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoleId");
+                    b.HasIndex("ExpiresAtUnixMilliseconds", "RevokedAtUnixMilliseconds")
+                        .HasDatabaseName("IX_role_assignments_expiry_revocation");
 
-                    b.HasIndex("SubjectKind", "SubjectId", "ScopeValue");
+                    b.HasIndex("RoleId", "RevokedAtUnixMilliseconds", "ExpiresAtUnixMilliseconds")
+                        .HasDatabaseName("IX_role_assignments_role_lifecycle");
 
-                    b.HasIndex("SubjectKind", "SubjectId", "RoleId", "ScopeValue")
-                        .IsUnique();
+                    b.HasIndex("SubjectKind", "SubjectId", "RoleId", "ScopeHash")
+                        .HasDatabaseName("IX_role_assignments_subject_role_scope_hash");
+
+                    b.HasIndex("SubjectKind", "SubjectId", "ScopeHash", "RevokedAtUnixMilliseconds", "ExpiresAtUnixMilliseconds")
+                        .HasDatabaseName("IX_role_assignments_subject_scope_hash_lifecycle");
 
                     b.ToTable("subject_role_assignments", "access");
                 });

@@ -2,6 +2,7 @@ namespace Gma.Modules.AccessControl.Tests;
 
 using Gma.Framework.AccessControl;
 using Gma.Modules.AccessControl.Application;
+using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Entities;
 using Xunit;
 
@@ -66,5 +67,7 @@ public sealed class AccessControlRbacEntityTests
         Assert.Equal("Actor-1", assignment.SubjectId);
         Assert.Equal(RoleId, assignment.RoleId);
         Assert.Equal("tenant:tenant-a", assignment.Scope.Value);
+        Assert.Equal(AccessScopeIndex.HashLength, assignment.ScopeHash.Length);
+        Assert.DoesNotContain("tenant-a", assignment.ScopeHash, StringComparison.Ordinal);
     }
 }

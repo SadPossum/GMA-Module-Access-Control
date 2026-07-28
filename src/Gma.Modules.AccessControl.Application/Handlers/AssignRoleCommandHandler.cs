@@ -7,7 +7,10 @@ using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Ports;
 
-internal sealed class AssignRoleCommandHandler(IAccessControlRbacRepository repository, ISystemClock clock)
+internal sealed class AssignRoleCommandHandler(
+    IAccessControlRbacRepository repository,
+    AccessRoleAssignmentPolicy assignmentPolicy,
+    ISystemClock clock)
     : ICommandHandler<AssignRoleCommand, Unit>
 {
     public async Task<Result<Unit>> HandleAsync(AssignRoleCommand command, CancellationToken cancellationToken)
@@ -28,20 +31,63 @@ internal sealed class AssignRoleCommandHandler(IAccessControlRbacRepository repo
         }
 
         AccessScope scope = command.AccessScope ?? AccessScope.Global;
+        DateTimeOffset now = clock.UtcNow;
+        DateTimeOffset? expiresAtUtc = command.ExpiresAtUtc is null
+            ? null
+            : DateTimeOffset.FromUnixTimeMilliseconds(
+                command.ExpiresAtUtc.Value.ToUniversalTime().ToUnixTimeMilliseconds());
+        if (expiresAtUtc is not null &&
+            expiresAtUtc.Value.ToUnixTimeMilliseconds() <= now.ToUnixTimeMilliseconds())
+        {
+            return Result.Failure<Unit>(AccessControlApplicationErrors.AssignmentExpiryInvalid);
+        }
 
-        if (!await repository.RoleExistsAsync(roleName, cancellationToken).ConfigureAwait(false))
+        string[]? rolePermissions = await repository
+            .FindRolePermissionsAsync(roleName, cancellationToken)
+            .ConfigureAwait(false);
+        if (rolePermissions is null)
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.RoleNotFound);
         }
 
-        if (await repository.AssignmentExistsAsync(subject, roleName, scope, cancellationToken).ConfigureAwait(false))
+        if (expiresAtUtc is not null &&
+            rolePermissions.Contains(
+                AccessControlPermissionGrant.OwnerWildcard,
+                StringComparer.Ordinal))
+        {
+            return Result.Failure<Unit>(AccessControlApplicationErrors.TemporaryOwnerAssignmentNotAllowed);
+        }
+
+        if (!await assignmentPolicy.IsAllowedAsync(
+                subject,
+                roleName,
+                scope,
+                expiresAtUtc,
+                rolePermissions,
+                cancellationToken)
+            .ConfigureAwait(false))
+        {
+            return Result.Failure<Unit>(AccessControlApplicationErrors.AssignmentRejected);
+        }
+
+        AccessControlRoleAssignmentPersistenceOutcome outcome = await repository.TryAssignRoleAsync(
+                subject,
+                roleName,
+                scope,
+                now,
+                expiresAtUtc,
+                rolePermissions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (outcome == AccessControlRoleAssignmentPersistenceOutcome.RoleDefinitionChanged)
+        {
+            return Result.Failure<Unit>(AccessControlApplicationErrors.AssignmentRejected);
+        }
+
+        if (outcome == AccessControlRoleAssignmentPersistenceOutcome.AlreadyExists)
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.AssignmentAlreadyExists);
         }
-
-        DateTimeOffset now = clock.UtcNow;
-        await repository.EnsureSubjectAsync(subject, now, cancellationToken).ConfigureAwait(false);
-        await repository.AssignRoleAsync(subject, roleName, scope, now, cancellationToken).ConfigureAwait(false);
 
         return Result.Success(Unit.Value);
     }

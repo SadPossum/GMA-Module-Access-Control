@@ -3,6 +3,7 @@ namespace Gma.Modules.AccessControl.Tests;
 using Gma.Framework.AccessControl;
 using Gma.Framework.Permissions;
 using Gma.Framework.Runtime.Identity;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Ports;
 using Gma.Modules.AccessControl.Persistence;
@@ -321,7 +322,12 @@ public sealed class AccessControlRbacRepositoryTests
 
         Assert.Equal(
             AccessControlRemovalOutcome.Removed,
-            await repository.UnassignRoleAsync(user, "property-reader", tenantA, CancellationToken.None));
+            await repository.UnassignRoleAsync(
+                user,
+                "property-reader",
+                tenantA,
+                Now,
+                CancellationToken.None));
 
         IReadOnlyList<AccessControlRoleAssignmentDetails> assignments = await repository
             .ListRoleAssignmentsAsync("property-reader", CancellationToken.None);
@@ -333,7 +339,12 @@ public sealed class AccessControlRbacRepositoryTests
             assignment.SubjectKind == AccessSubjectKind.AdminActor && assignment.AccessScope.Equals(tenantA));
         Assert.Equal(
             AccessControlRemovalOutcome.NotFound,
-            await repository.UnassignRoleAsync(user, "property-reader", tenantA, CancellationToken.None));
+            await repository.UnassignRoleAsync(
+                user,
+                "property-reader",
+                tenantA,
+                Now,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -367,11 +378,13 @@ public sealed class AccessControlRbacRepositoryTests
             subject,
             "workspace-member",
             scope,
+            Now,
             CancellationToken.None);
         AccessControlRemovalOutcome missing = await repository.UnassignRoleAsync(
             subject,
             "workspace-member",
             scope,
+            Now,
             CancellationToken.None);
 
         Assert.Equal(AccessControlRemovalOutcome.Removed, removed);
@@ -406,7 +419,12 @@ public sealed class AccessControlRbacRepositoryTests
 
         Assert.Equal(
             AccessControlRemovalOutcome.LastOwnerProtected,
-            await repository.UnassignRoleAsync(owner, "owner", AccessScope.Global, CancellationToken.None));
+            await repository.UnassignRoleAsync(
+                owner,
+                "owner",
+                AccessScope.Global,
+                Now,
+                CancellationToken.None));
         Assert.Equal(
             AccessControlRemovalOutcome.LastOwnerProtected,
             await repository.RevokeRolePermissionAsync("owner", AccessControlPermissionGrant.OwnerWildcard, CancellationToken.None));
@@ -432,7 +450,12 @@ public sealed class AccessControlRbacRepositoryTests
 
         Assert.Equal(
             AccessControlRemovalOutcome.Removed,
-            await repository.UnassignRoleAsync(ownerA, "owner-a", AccessScope.Global, CancellationToken.None));
+            await repository.UnassignRoleAsync(
+                ownerA,
+                "owner-a",
+                AccessScope.Global,
+                Now,
+                CancellationToken.None));
         Assert.Equal(
             AccessControlRemovalOutcome.LastOwnerProtected,
             await repository.RevokeRolePermissionAsync("owner-b", AccessControlPermissionGrant.OwnerWildcard, CancellationToken.None));
@@ -490,12 +513,16 @@ public sealed class AccessControlRbacRepositoryTests
             PermissionCode.Create("catalog.items.read").Value,
             AccessControlPermissionGrant.OwnerWildcard
         ];
+        string[] candidateScopeHashes = candidateScopeValues
+            .Select(AccessScopeIndex.Create)
+            .ToArray();
 
         IQueryable<AccessSubjectRoleAssignment> assignments = dbContext.SubjectRoleAssignments
             .AsNoTracking()
             .Where(assignment =>
                 assignment.SubjectKind == (int)AccessSubjectKind.User &&
                 assignment.SubjectId == "user-a" &&
+                candidateScopeHashes.Contains(assignment.ScopeHash) &&
                 candidateScopeValues.Contains(assignment.ScopeValue));
 
         IQueryable<AccessRolePermission> permissionGrants = dbContext.RolePermissions
@@ -516,6 +543,7 @@ public sealed class AccessControlRbacRepositoryTests
                 })
             .ToQueryString();
 
+        Assert.Contains("[s].[ScopeHash] IN", sql, StringComparison.Ordinal);
         Assert.Contains("[s].[Scope] IN", sql, StringComparison.Ordinal);
         Assert.Contains("[r].[PermissionCode] IN", sql, StringComparison.Ordinal);
     }
@@ -570,7 +598,11 @@ public sealed class AccessControlRbacRepositoryTests
     private static AccessControlRbacRepository CreateRepository(
         AccessControlDbContext dbContext,
         params (string Permission, AccessScopeMatchOptions Options)[] configuredPermissions) =>
-        new(dbContext, new SequenceIdGenerator(), new TestScopeMatchOptionsResolver(configuredPermissions));
+        new(
+            dbContext,
+            new SequenceIdGenerator(),
+            new TestScopeMatchOptionsResolver(configuredPermissions),
+            new FixedClock(Now));
 
     private sealed class TestScopeMatchOptionsResolver(
         IEnumerable<(string Permission, AccessScopeMatchOptions Options)> configuredPermissions)
@@ -594,5 +626,10 @@ public sealed class AccessControlRbacRepositoryTests
             this.next++;
             return Guid.Parse($"00000000-0000-0000-0000-{this.next:000000000000}");
         }
+    }
+
+    private sealed class FixedClock(DateTimeOffset utcNow) : ISystemClock
+    {
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
     }
 }

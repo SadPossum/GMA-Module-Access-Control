@@ -23,7 +23,8 @@ public sealed class AccessControlRoleProvisionerTests
         AccessControlRbacRepository repository = new(
             dbContext,
             new SequenceIdGenerator(),
-            new ExactScopeMatchOptionsResolver());
+            new ExactScopeMatchOptionsResolver(),
+            new FixedClock(Now));
         AccessControlRoleProvisioner provisioner = new(
             repository,
             new FixedClock(Now));

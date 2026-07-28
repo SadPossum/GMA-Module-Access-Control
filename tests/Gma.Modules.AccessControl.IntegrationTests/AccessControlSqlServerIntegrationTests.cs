@@ -5,6 +5,7 @@ using Gma.Framework.Permissions;
 using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
+using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Handlers;
 using Gma.Modules.AccessControl.Application.Ports;
@@ -15,6 +16,7 @@ using Gma.Modules.AccessControl.Domain.Enums;
 using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Gma.Modules.AccessControl.IntegrationTests.Support;
 using Gma.Modules.AccessControl.Persistence;
+using Gma.Modules.AccessControl.Persistence.Entities;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -32,16 +34,19 @@ public sealed class AccessControlSqlServerIntegrationTests
     private static readonly AccessProfileSubject Actor = new(AccessProfileSubjectKind.System, "integration-tests");
 
     [DockerFact]
-    public async Task SqlServer_scoped_assignment_migration_backfills_existing_grants_to_the_profile_owner_scope()
+    public async Task SqlServer_schema_upgrade_backfills_existing_profile_and_role_assignment_scopes()
     {
         await using MsSqlContainer sqlServer = CreateSqlServer();
         await sqlServer.StartAsync();
         string connectionString = sqlServer.GetConnectionString();
         Guid profileId = Guid.NewGuid();
         Guid assignmentId = Guid.NewGuid();
+        Guid roleId = Guid.NewGuid();
+        Guid roleAssignmentId = Guid.NewGuid();
         const string subjectId = "legacy-user";
         const string profileKey = "legacy-profile";
         const string profileName = "Legacy profile";
+        const string roleName = "legacy-role";
         const string actorId = "migration-test";
 
         await using (AccessControlDbContext legacy = CreateDbContext(connectionString))
@@ -67,6 +72,15 @@ public sealed class AccessControlSqlServerIntegrationTests
                 VALUES
                     ({assignmentId}, {profileId}, {(int)AccessProfileSubjectKind.User}, {subjectId},
                      {(int)AccessProfileSubjectKind.System}, {actorId}, {Now});
+
+                INSERT INTO [access].[roles] ([Id], [Name], [CreatedAtUtc])
+                VALUES ({roleId}, {roleName}, {Now});
+
+                INSERT INTO [access].[subject_role_assignments]
+                    ([Id], [SubjectKind], [SubjectId], [RoleId], [Scope], [CreatedAtUtc])
+                VALUES
+                    ({roleAssignmentId}, {(int)AccessSubjectKind.User}, {subjectId},
+                     {roleId}, {TenantScope.Value}, {Now});
                 """);
             await legacy.Database.MigrateAsync();
         }
@@ -74,6 +88,14 @@ public sealed class AccessControlSqlServerIntegrationTests
         await using AccessControlDbContext verification = CreateDbContext(connectionString);
         AccessProfileAssignment assignment = await verification.AccessProfileAssignments.SingleAsync();
         Assert.Equal(TenantScope.Value, assignment.AssignmentScopeValue);
+        AccessSubjectRoleAssignment roleAssignment =
+            await verification.SubjectRoleAssignments.SingleAsync();
+        Assert.Equal(64, roleAssignment.ScopeHash.Length);
+        Assert.True(await CreateRbacRepository(verification).AssignmentExistsAsync(
+            AccessSubject.User(subjectId),
+            roleName,
+            TenantScope,
+            CancellationToken.None));
     }
 
     [DockerFact]
@@ -125,7 +147,90 @@ public sealed class AccessControlSqlServerIntegrationTests
         Assert.Contains(AccessControlRemovalOutcome.Removed, outcomes);
         Assert.Contains(AccessControlRemovalOutcome.LastOwnerProtected, outcomes);
         await using AccessControlDbContext verification = CreateDbContext(connectionString);
-        Assert.Single(await verification.SubjectRoleAssignments.ToArrayAsync());
+        AccessSubjectRoleAssignment[] assignments =
+            await verification.SubjectRoleAssignments.ToArrayAsync();
+        Assert.Equal(2, assignments.Length);
+        Assert.Single(assignments, assignment => assignment.IsActiveAt(Now));
+        Assert.Single(assignments, assignment => assignment.RevokedAtUtc is not null);
+    }
+
+    [DockerFact]
+    public async Task SqlServer_temporary_role_lease_is_atomic_and_expiry_aware()
+    {
+        await using MsSqlContainer sqlServer = CreateSqlServer();
+        await sqlServer.StartAsync();
+        string connectionString = sqlServer.GetConnectionString();
+        await MigrateAsync(connectionString);
+        DateTimeOffset expiresAtUtc = Now.AddMinutes(30);
+        const string roleName = "support-reader";
+        AccessSubject subject = AccessSubject.AdminActor("support-a");
+
+        string[] expectedPermissions;
+        await using (AccessControlDbContext seed = CreateDbContext(connectionString))
+        {
+            AccessControlRbacRepository repository = CreateRbacRepository(seed);
+            await repository.EnsureRoleDefinitionAsync(
+                roleName,
+                ["properties.read"],
+                Now,
+                CancellationToken.None);
+            expectedPermissions = Assert.IsType<string[]>(
+                await repository.FindRolePermissionsAsync(roleName, CancellationToken.None));
+        }
+
+        AccessControlRoleAssignmentPersistenceOutcome[] outcomes = await Task.WhenAll(
+            TryAssignTemporaryRoleAsync(
+                connectionString,
+                subject,
+                roleName,
+                expiresAtUtc,
+                expectedPermissions),
+            TryAssignTemporaryRoleAsync(
+                connectionString,
+                subject,
+                roleName,
+                expiresAtUtc,
+                expectedPermissions));
+        Assert.Single(
+            outcomes,
+            outcome => outcome == AccessControlRoleAssignmentPersistenceOutcome.Assigned);
+        Assert.Single(
+            outcomes,
+            outcome => outcome == AccessControlRoleAssignmentPersistenceOutcome.AlreadyExists);
+
+        await using (AccessControlDbContext activeContext = CreateDbContext(connectionString))
+        {
+            AccessControlRbacRepository active = CreateRbacRepository(activeContext, Now);
+            AccessSubjectRoleAssignment persisted = Assert.Single(
+                await activeContext.SubjectRoleAssignments.AsNoTracking().ToArrayAsync());
+            Assert.Equal(64, persisted.ScopeHash.Length);
+            Assert.DoesNotContain(TenantScope.Value, persisted.ScopeHash, StringComparison.Ordinal);
+            Assert.True(await active.HasPermissionAsync(
+                subject,
+                PermissionCode.Create("properties.read"),
+                TenantScope,
+                CancellationToken.None));
+        }
+
+        await using AccessControlDbContext expiredContext = CreateDbContext(connectionString);
+        AccessControlRbacRepository expired = CreateRbacRepository(expiredContext, expiresAtUtc);
+        Assert.False(await expired.HasPermissionAsync(
+            subject,
+            PermissionCode.Create("properties.read"),
+            TenantScope,
+            CancellationToken.None));
+        Assert.Empty((await expired.ListRoleAssignmentsPageAsync(
+            roleName,
+            Gma.Framework.Pagination.PageRequest.Normalize(1, 10),
+            includeInactive: false,
+            CancellationToken.None)).Items);
+        AccessControlRoleAssignmentDetails history = Assert.Single((await expired
+            .ListRoleAssignmentsPageAsync(
+                roleName,
+                Gma.Framework.Pagination.PageRequest.Normalize(1, 10),
+                includeInactive: true,
+                CancellationToken.None)).Items);
+        Assert.Equal(AccessRoleAssignmentStatus.Expired, history.Status);
     }
 
     [DockerFact]
@@ -257,7 +362,11 @@ public sealed class AccessControlSqlServerIntegrationTests
     {
         await using AccessControlDbContext dbContext = CreateDbContext(connectionString);
         return await CreateRbacRepository(dbContext).UnassignRoleAsync(
-            owner, "owner", AccessScope.Global, CancellationToken.None);
+            owner,
+            "owner",
+            AccessScope.Global,
+            Now,
+            CancellationToken.None);
     }
 
     private static async Task MigrateAsync(string connectionString)
@@ -327,7 +436,34 @@ public sealed class AccessControlSqlServerIntegrationTests
     }
 
     private static AccessControlRbacRepository CreateRbacRepository(AccessControlDbContext dbContext) =>
-        new(dbContext, new RandomIdGenerator(), new DefaultScopeMatchOptionsResolver());
+        CreateRbacRepository(dbContext, Now);
+
+    private static AccessControlRbacRepository CreateRbacRepository(
+        AccessControlDbContext dbContext,
+        DateTimeOffset nowUtc) =>
+        new(
+            dbContext,
+            new RandomIdGenerator(),
+            new DefaultScopeMatchOptionsResolver(),
+            new FixedClock(nowUtc));
+
+    private static async Task<AccessControlRoleAssignmentPersistenceOutcome> TryAssignTemporaryRoleAsync(
+        string connectionString,
+        AccessSubject subject,
+        string roleName,
+        DateTimeOffset expiresAtUtc,
+        IReadOnlyCollection<string> expectedPermissions)
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext(connectionString);
+        return await CreateRbacRepository(dbContext).TryAssignRoleAsync(
+            subject,
+            roleName,
+            TenantScope,
+            Now,
+            expiresAtUtc,
+            expectedPermissions,
+            CancellationToken.None);
+    }
 
     private static AccessProfile CreateProfile(string key, IReadOnlyCollection<string> permissions)
     {

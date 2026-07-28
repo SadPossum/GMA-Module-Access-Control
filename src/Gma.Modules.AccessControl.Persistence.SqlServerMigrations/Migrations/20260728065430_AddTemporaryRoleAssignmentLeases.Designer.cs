@@ -4,6 +4,7 @@ using Gma.Modules.AccessControl.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
 {
     [DbContext(typeof(AccessControlDbContext))]
-    partial class AccessControlDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728065430_AddTemporaryRoleAssignmentLeases")]
+    partial class AddTemporaryRoleAssignmentLeases
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -392,11 +395,11 @@ namespace Gma.Modules.AccessControl.Persistence.SqlServerMigrations.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExpiresAtUnixMilliseconds", "RevokedAtUnixMilliseconds")
-                        .HasDatabaseName("IX_role_assignments_expiry_revocation");
-
                     b.HasIndex("RoleId", "RevokedAtUnixMilliseconds", "ExpiresAtUnixMilliseconds")
                         .HasDatabaseName("IX_role_assignments_role_lifecycle");
+
+                    b.HasIndex("ExpiresAtUnixMilliseconds", "RevokedAtUnixMilliseconds")
+                        .HasDatabaseName("IX_role_assignments_expiry_revocation");
 
                     b.HasIndex("SubjectKind", "SubjectId", "RoleId", "ScopeHash")
                         .HasDatabaseName("IX_role_assignments_subject_role_scope_hash");

@@ -5,6 +5,7 @@ using Gma.Framework.Pagination;
 using Gma.Framework.Permissions;
 using Gma.Framework.Results;
 using Gma.Framework.Runtime.Identity;
+using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application;
 using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
@@ -278,7 +279,16 @@ public sealed class AccessProfileRepositoryTests
         AccessControlDbContext dbContext,
         IIdGenerator ids,
         params (string Permission, AccessScopeMatchOptions Options)[] configuredPermissions) =>
-        new(dbContext, ids, new TestScopeMatchOptionsResolver(configuredPermissions));
+        new(
+            dbContext,
+            ids,
+            new TestScopeMatchOptionsResolver(configuredPermissions),
+            new FixedClock(Now));
+
+    private sealed class FixedClock(DateTimeOffset utcNow) : ISystemClock
+    {
+        public DateTimeOffset UtcNow { get; } = utcNow;
+    }
 
     private sealed class TestScopeMatchOptionsResolver(
         IEnumerable<(string Permission, AccessScopeMatchOptions Options)> configuredPermissions)

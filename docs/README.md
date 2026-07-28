@@ -6,6 +6,7 @@ Development tasks:
 - [Scoped access-profile assignments](scoped-access-profile-assignments-task.md)
 - [AccessControl production hardening](access-control-production-hardening-task.md)
 - [AccessControl domain completion](access-control-domain-completion-task.md)
+- [Temporary role-assignment leases](temporary-role-assignment-leases-task.md)
 
 `Gma.Modules.AccessControl` is the optional persisted RBAC implementation for the generic access-control framework.
 
@@ -13,7 +14,8 @@ It owns:
 
 - access principals keyed by subject kind and subject id;
 - role names and role permissions;
-- subject role assignments scoped by normalized `AccessScope`;
+- standing or temporary subject role assignments scoped by normalized
+  `AccessScope`, with retained revocation history;
 - tenant-owned scoped access profiles, profile permissions, assignments, and immutable change history;
 - SQL Server and PostgreSQL migrations in the `access` schema;
 - the persisted `IAccessDecisionProvider` used by `IAccessAuthorizationService`;
@@ -50,6 +52,18 @@ Registration only establishes eligibility. Create, update, and assignment operat
 Delegation is evaluated through the framework batch authorization contract, so one profile operation does not perform one provider round trip per permission.
 
 Products may additionally register one or more `IAccessProfileAssignmentPolicy` implementations when profile assignment eligibility depends on product-owned state. Policies run after AccessControl's delegation checks and before persistence; any rejection fails closed. AccessControl intentionally does not know what membership, employment, or another product lifecycle means.
+
+Products may register conjunctive `IAccessRoleAssignmentPolicy` implementations
+for compatibility-role grants. Policies receive only the generic subject,
+normalized role, its ordered permission snapshot, scope, and optional UTC
+expiry. AccessControl rechecks that snapshot under the provider-backed
+management lock before writing the assignment. A role cannot gain permissions
+while it has an active temporary assignment; reducing its permissions remains
+allowed. Role-assignment scope lookups use a fixed SHA-256 index key plus the
+canonical scope predicate, keeping SQL Server keys bounded without relying on
+hash uniqueness. AccessControl also publishes post-settlement assignment lifecycle observations through
+`IAccessRoleAssignmentLifecycleObserver`; observers must keep evidence bounded
+and must not treat the hook as a transactional outbox.
 
 Cross-module extensions may remove every scoped profile assignment for one subject and one exact scope through `IAccessProfileAssignmentRevoker`. The operation is transactional and idempotent, preserves immutable unassignment history, and does not affect compatibility roles or assignments in another scope. Lifecycle event handling belongs in an explicit extension, not in AccessControl.
 
@@ -96,9 +110,9 @@ admin bootstrap --actor <id> --yes
 admin roles create --actor <id> --name <role>
 admin roles grant --actor <id> --role <role> --permission <code>
 admin roles revoke --actor <id> --role <role> --permission <code>
-admin roles assign --actor <id> --target-kind <kind> --target-id <id> --role <role> [--scope <scope>]
+admin roles assign --actor <id> --target-kind <kind> --target-id <id> --role <role> [--scope <scope>] [--expires-at-utc <utc>]
 admin roles unassign --actor <id> --target-kind <kind> --target-id <id> --role <role> [--scope <scope>]
-admin roles assignments --actor <id> --role <role> [--page <n>] [--page-size <n>] [--output table|json]
+admin roles assignments --actor <id> --role <role> [--include-inactive] [--page <n>] [--page-size <n>] [--output table|json]
 admin roles list --actor <id> [--page <n>] [--page-size <n>] [--output table|json]
 ```
 
@@ -106,7 +120,13 @@ Supported target kinds are `user`, `admin-actor`, `service`, and `system`. `--ta
 
 Existing assignment API clients may continue sending `actorId`; it is treated strictly as an `admin-actor` identity. New clients should send explicit `subjectKind` and `subjectId`, which are required for every non-admin subject.
 
-Revocation and unassignment take effect immediately. The final global `admin-actor` owner wildcard assignment is protected from both unassignment and wildcard revocation so an operator cannot permanently lock every administration surface.
+Revocation and unassignment take effect immediately and remain reviewable.
+Expiry is evaluated inside persisted authorization, so a lease stops
+authorizing at its stored UTC boundary without waiting for a cleanup worker.
+The final active global `admin-actor` owner wildcard assignment is protected
+from both unassignment and wildcard revocation so an operator cannot
+permanently lock every administration surface. Temporary owner-wildcard
+assignments are rejected.
 
 `bootstrap` creates the first owner principal and succeeds only when there are no existing assignments unless configuration explicitly allows bootstrap over existing assignments. The persisted implementation reserves bootstrap through a provider-backed singleton gate inside the same transaction as role/assignment creation, so concurrent first-owner attempts cannot both succeed.
 
@@ -216,7 +236,11 @@ Point authorization and `IAccessGrantScopeReader` resolve the same descriptor po
 
 ## Boundaries
 
-Modules declare permission codes in contracts/metadata. Roles are operator configuration and should not be hard-coded in product modules.
+Modules declare permission codes in contracts/metadata. Role definitions are
+operator configuration. A product may constrain which role names and permission
+sets are eligible for a sensitive assignment through
+`IAccessRoleAssignmentPolicy`; those product decisions do not belong in
+AccessControl.
 
 AccessControl references framework contracts and persistence helpers only. It must not reference Auth internals, Administration internals, NATS, Redis, or product modules.
 

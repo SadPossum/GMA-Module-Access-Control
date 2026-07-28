@@ -1,5 +1,6 @@
 namespace Gma.Modules.AccessControl.Application.Handlers;
 
+using Gma.Framework.AccessControl;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
 using Gma.Framework.Runtime.Time;
@@ -33,13 +34,20 @@ internal sealed class GrantRolePermissionCommandHandler(IAccessControlRbacReposi
             return Result.Failure<Unit>(AccessControlApplicationErrors.PermissionCodeInvalid);
         }
 
-        if (await repository.RoleHasPermissionAsync(roleName, permission, cancellationToken).ConfigureAwait(false))
+        DateTimeOffset now = clock.UtcNow;
+        AccessControlRolePermissionGrantPersistenceOutcome outcome = await repository
+            .GrantRolePermissionAsync(roleName, permission, now, cancellationToken)
+            .ConfigureAwait(false);
+        if (outcome == AccessControlRolePermissionGrantPersistenceOutcome.TemporaryAssignmentsExist)
+        {
+            return Result.Failure<Unit>(
+                AccessControlApplicationErrors.RolePermissionExpansionTemporaryAssignmentsExist);
+        }
+
+        if (outcome == AccessControlRolePermissionGrantPersistenceOutcome.AlreadyGranted)
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.PermissionAlreadyGranted);
         }
-
-        await repository.GrantRolePermissionAsync(roleName, permission, clock.UtcNow, cancellationToken)
-            .ConfigureAwait(false);
 
         return Result.Success(Unit.Value);
     }

@@ -122,6 +122,7 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
             string roleName,
             int? page,
             int? pageSize,
+            bool? includeInactive,
             HttpContext httpContext,
             AdminApiExecutor executor,
             IRequestDispatcher dispatcher,
@@ -134,6 +135,7 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
                     dispatcher, roleName,
                     page ?? PageRequest.DefaultPage,
                     pageSize ?? PageRequest.DefaultPageSize,
+                    includeInactive ?? false,
                     token),
                 cancellationToken,
                 errorStatusCodes: AdminErrorStatusCodes).ConfigureAwait(false));
@@ -162,7 +164,8 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
         string? ActorId,
         [property: JsonPropertyName("scope")] string? AccessScope,
         string? SubjectKind = null,
-        string? SubjectId = null);
+        string? SubjectId = null,
+        DateTimeOffset? ExpiresAtUtc = null);
 
     public sealed record AccessRoleAssignmentApiResponse(
         Guid Id,
@@ -170,7 +173,10 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
         string SubjectId,
         string RoleName,
         [property: JsonConverter(typeof(AccessScopeJsonConverter))] AccessScope Scope,
-        DateTimeOffset CreatedAtUtc);
+        DateTimeOffset CreatedAtUtc,
+        DateTimeOffset? ExpiresAtUtc = null,
+        DateTimeOffset? RevokedAtUtc = null,
+        AccessRoleAssignmentStatus Status = AccessRoleAssignmentStatus.Active);
 
     private static Task<Result<Unit>> SendAssignRoleCommandAsync(
         IRequestDispatcher dispatcher,
@@ -189,7 +195,12 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
         }
 
         return dispatcher.SendAsync(
-            new AssignRoleCommand(subject.Kind, subject.Id, roleName, scope),
+            new AssignRoleCommand(
+                subject.Kind,
+                subject.Id,
+                roleName,
+                scope,
+                request.ExpiresAtUtc),
             cancellationToken);
     }
 
@@ -247,10 +258,13 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
         string roleName,
         int page,
         int pageSize,
+        bool includeInactive,
         CancellationToken cancellationToken)
     {
         Result<AccessControlPage<AccessControlRoleAssignmentDetails>> result = await dispatcher
-            .QueryAsync(new ListRoleAssignmentsQuery(roleName, page, pageSize), cancellationToken)
+            .QueryAsync(
+                new ListRoleAssignmentsQuery(roleName, page, pageSize, includeInactive),
+                cancellationToken)
             .ConfigureAwait(false);
 
         return result.IsFailure
@@ -262,7 +276,10 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
                     assignment.SubjectId,
                     assignment.RoleName,
                     assignment.AccessScope,
-                    assignment.CreatedAtUtc))
+                    assignment.CreatedAtUtc,
+                    assignment.ExpiresAtUtc,
+                    assignment.RevokedAtUtc,
+                    assignment.Status))
                 .ToArray(), result.Value.Page, result.Value.PageSize, result.Value.HasMore));
     }
 
@@ -289,6 +306,9 @@ public sealed class AccessControlAdminApiModule : IAdminApiModule
         new(AccessControlApplicationErrors.RoleAlreadyExists.Code, StatusCodes.Status409Conflict),
         new(AccessControlApplicationErrors.PermissionAlreadyGranted.Code, StatusCodes.Status409Conflict),
         new(AccessControlApplicationErrors.AssignmentAlreadyExists.Code, StatusCodes.Status409Conflict),
+        new(AccessControlApplicationErrors.AssignmentRejected.Code, StatusCodes.Status403Forbidden),
+        new(AccessControlApplicationErrors.TemporaryOwnerAssignmentNotAllowed.Code, StatusCodes.Status403Forbidden),
+        new(AccessControlApplicationErrors.RolePermissionExpansionTemporaryAssignmentsExist.Code, StatusCodes.Status409Conflict),
         new(AccessControlApplicationErrors.PermissionNotGranted.Code, StatusCodes.Status404NotFound),
         new(AccessControlApplicationErrors.AssignmentNotFound.Code, StatusCodes.Status404NotFound),
         new(AccessControlApplicationErrors.LastOwnerProtected.Code, StatusCodes.Status409Conflict));
