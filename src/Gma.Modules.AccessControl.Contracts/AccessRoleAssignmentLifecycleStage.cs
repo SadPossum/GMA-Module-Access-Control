@@ -1,5 +1,8 @@
 namespace Gma.Modules.AccessControl.Contracts;
 
+using System.Text.Json.Serialization;
+
+[JsonConverter(typeof(AccessRoleAssignmentLifecycleStageJsonConverter))]
 public enum AccessRoleAssignmentLifecycleStage
 {
     Unknown = 0,

@@ -34,6 +34,25 @@ public sealed class AccessControlContractEnumJsonTests
         AssertWireValue(outcome, wireName);
 
     [Theory]
+    [InlineData(AccessRoleAssignmentLifecycleStage.Requested, "requested")]
+    [InlineData(AccessRoleAssignmentLifecycleStage.Granted, "granted")]
+    [InlineData(AccessRoleAssignmentLifecycleStage.Denied, "denied")]
+    [InlineData(AccessRoleAssignmentLifecycleStage.Revoked, "revoked")]
+    public void Role_assignment_lifecycle_stage_uses_stable_wire_names(
+        AccessRoleAssignmentLifecycleStage stage,
+        string wireName) =>
+        AssertWireValue(stage, wireName);
+
+    [Theory]
+    [InlineData(AccessRoleAssignmentStatus.Active, "active")]
+    [InlineData(AccessRoleAssignmentStatus.Expired, "expired")]
+    [InlineData(AccessRoleAssignmentStatus.Revoked, "revoked")]
+    public void Role_assignment_status_uses_stable_wire_names(
+        AccessRoleAssignmentStatus status,
+        string wireName) =>
+        AssertWireValue(status, wireName);
+
+    [Theory]
     [InlineData("1")]
     [InlineData("\"unknown\"")]
     [InlineData("\"future\"")]
@@ -42,6 +61,8 @@ public sealed class AccessControlContractEnumJsonTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessProfileStatus>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessProfileChangeKind>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlAssignmentRemovalOutcome>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessRoleAssignmentLifecycleStage>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessRoleAssignmentStatus>(json, JsonOptions));
     }
 
     [Fact]
@@ -51,6 +72,12 @@ public sealed class AccessControlContractEnumJsonTests
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(AccessProfileChangeKind.Unknown, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
             AccessControlAssignmentRemovalOutcome.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessRoleAssignmentLifecycleStage.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessRoleAssignmentStatus.Unknown,
             JsonOptions));
     }
 
