@@ -33,7 +33,7 @@ internal sealed partial class AccessProfileMutationAdmissionPolicy(
                     logger,
                     policy.GetType().FullName,
                     context.Operation,
-                    exception);
+                    exception.GetType().Name);
                 return Result.Failure(
                     AccessControlApplicationErrors
                         .ProfileMutationAdmissionUnavailable);
@@ -59,10 +59,10 @@ internal sealed partial class AccessProfileMutationAdmissionPolicy(
     [LoggerMessage(
         EventId = 5102,
         Level = LogLevel.Warning,
-        Message = "Access-profile mutation admission policy {PolicyType} failed for operation {Operation}.")]
+        Message = "Access-profile mutation admission policy {PolicyType} failed for operation {Operation} with {ExceptionType}.")]
     private static partial void LogPolicyFailure(
         ILogger logger,
         string? policyType,
         AccessProfileMutationAdmissionOperation operation,
-        Exception exception);
+        string exceptionType);
 }
