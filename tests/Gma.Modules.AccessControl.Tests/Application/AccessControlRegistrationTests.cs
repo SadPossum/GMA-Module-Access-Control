@@ -50,6 +50,9 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(services, HasService<IAccessProfileProvisioner, AccessProfileProvisioner>());
         Assert.Single(services, HasService<IScopedAccessProfileProvisioner, AccessProfileProvisioner>());
         Assert.Single(services, HasService<IAccessProfileAssignmentRevoker, AccessProfileAssignmentRevoker>());
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType ==
+            typeof(AccessProfileMutationAdmissionPolicy));
         Assert.Single(services, HasService<ICommandHandler<CreateAccessProfileCommand, AccessProfileDetails>, CreateAccessProfileCommandHandler>());
         Assert.Single(services, HasService<ICommandValidator<CreateAccessProfileCommand>, CreateAccessProfileCommandValidator>());
         Assert.Single(services, HasService<ICommandValidator<UpdateAccessProfileCommand>, UpdateAccessProfileCommandValidator>());

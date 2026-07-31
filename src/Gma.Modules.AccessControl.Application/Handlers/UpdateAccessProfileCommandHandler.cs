@@ -6,11 +6,13 @@ using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Ports;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 
 internal sealed class UpdateAccessProfileCommandHandler(
     IAccessProfileRepository repository,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessProfileMutationAdmissionPolicy mutationAdmission,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<UpdateAccessProfileCommand, AccessProfileDetails>
 {
@@ -26,6 +28,19 @@ internal sealed class UpdateAccessProfileCommandHandler(
             .GetAsync(command.ProfileId, command.OwnerScope, tracking: true, cancellationToken)
             .ConfigureAwait(false);
         if (profile is null) return Result.Failure<AccessProfileDetails>(AccessControlApplicationErrors.ProfileNotFound);
+
+        Result admitted = await mutationAdmission.AuthorizeAsync(
+            new AccessProfileMutationAdmissionContext(
+                AccessProfileMutationAdmissionOperation.UpdateProfile,
+                command.OwnerScope,
+                command.Actor,
+                profile.Id,
+                profile.Key),
+            cancellationToken).ConfigureAwait(false);
+        if (admitted.IsFailure)
+        {
+            return Result.Failure<AccessProfileDetails>(admitted.Error);
+        }
 
         Result updated = profile.Update(
             command.DisplayName, command.Description, command.Permissions, command.ExpectedVersion,

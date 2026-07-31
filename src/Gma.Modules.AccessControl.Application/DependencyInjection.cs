@@ -66,6 +66,7 @@ public static class DependencyInjection
             RoleAssignmentLifecycleOutcomeObserver>());
         services.TryAddScoped<AccessProfilePermissionPolicy>();
         services.TryAddScoped<AccessProfileAssignmentPolicy>();
+        services.TryAddScoped<AccessProfileMutationAdmissionPolicy>();
         services.TryAddScoped<IAccessProfileManager, AccessProfileManager>();
         services.TryAddScoped<IScopedAccessProfileManager, ScopedAccessProfileManager>();
         services.TryAddScoped<IAccessProfileProvisioner, AccessProfileProvisioner>();

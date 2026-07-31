@@ -6,12 +6,14 @@ using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Ports;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.ValueObjects;
 
 internal sealed class CreateAccessProfileCommandHandler(
     IAccessProfileRepository repository,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessProfileMutationAdmissionPolicy mutationAdmission,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<CreateAccessProfileCommand, AccessProfileDetails>
 {
@@ -28,6 +30,18 @@ internal sealed class CreateAccessProfileCommandHandler(
         if (await repository.KeyExistsAsync(command.OwnerScope, key.Value.Value, cancellationToken).ConfigureAwait(false))
         {
             return Result.Failure<AccessProfileDetails>(AccessControlApplicationErrors.ProfileAlreadyExists);
+        }
+
+        Result admitted = await mutationAdmission.AuthorizeAsync(
+            new AccessProfileMutationAdmissionContext(
+                AccessProfileMutationAdmissionOperation.CreateProfile,
+                command.OwnerScope,
+                command.Actor,
+                ProfileKey: key.Value.Value),
+            cancellationToken).ConfigureAwait(false);
+        if (admitted.IsFailure)
+        {
+            return Result.Failure<AccessProfileDetails>(admitted.Error);
         }
 
         Result<AccessProfile> profile = AccessProfile.Create(

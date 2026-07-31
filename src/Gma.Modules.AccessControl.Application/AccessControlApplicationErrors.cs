@@ -31,6 +31,8 @@ public static class AccessControlApplicationErrors
     public static readonly Error ProfileAssignmentScopeInvalid = new("AccessControl.ProfileAssignmentScopeInvalid", "The assignment scope must equal or descend from the profile owner scope.");
     public static readonly Error ProfilePermissionNotAllowed = new("AccessControl.ProfilePermissionNotAllowed", "The permission is not eligible for scoped access profiles.");
     public static readonly Error ProfilePermissionEscalation = new("AccessControl.ProfilePermissionEscalation", "The actor cannot delegate a permission they do not hold in the owning scope.");
+    public static readonly Error ProfileMutationRejected = new("AccessControl.ProfileMutationRejected", "The access-profile mutation is not currently permitted.");
+    public static readonly Error ProfileMutationAdmissionUnavailable = new("AccessControl.ProfileMutationAdmissionUnavailable", "Access-profile mutation admission is temporarily unavailable.");
     public static Error ProfileScopeRequired => AccessProfileDomainErrors.ScopeRequired;
     public static Error ProfileKeyInvalid => AccessProfileDomainErrors.KeyInvalid;
     public static Error ProfileDisplayNameInvalid => AccessProfileDomainErrors.DisplayNameInvalid;

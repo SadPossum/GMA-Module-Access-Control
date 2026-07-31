@@ -53,6 +53,35 @@ public sealed class AccessControlContractEnumJsonTests
         AssertWireValue(status, wireName);
 
     [Theory]
+    [InlineData(AccessProfileMutationAdmissionDecision.Allowed, "allowed")]
+    [InlineData(AccessProfileMutationAdmissionDecision.Denied, "denied")]
+    [InlineData(
+        AccessProfileMutationAdmissionDecision.Unavailable,
+        "unavailable")]
+    public void Profile_mutation_admission_decision_uses_stable_wire_names(
+        AccessProfileMutationAdmissionDecision decision,
+        string wireName) =>
+        AssertWireValue(decision, wireName);
+
+    [Theory]
+    [InlineData(
+        AccessProfileMutationAdmissionOperation.CreateProfile,
+        "create-profile")]
+    [InlineData(
+        AccessProfileMutationAdmissionOperation.UpdateProfile,
+        "update-profile")]
+    [InlineData(
+        AccessProfileMutationAdmissionOperation.ArchiveProfile,
+        "archive-profile")]
+    [InlineData(
+        AccessProfileMutationAdmissionOperation.EnsureProfile,
+        "ensure-profile")]
+    public void Profile_mutation_admission_operation_uses_stable_wire_names(
+        AccessProfileMutationAdmissionOperation operation,
+        string wireName) =>
+        AssertWireValue(operation, wireName);
+
+    [Theory]
     [InlineData("1")]
     [InlineData("\"unknown\"")]
     [InlineData("\"future\"")]
@@ -63,6 +92,10 @@ public sealed class AccessControlContractEnumJsonTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlAssignmentRemovalOutcome>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessRoleAssignmentLifecycleStage>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessRoleAssignmentStatus>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<
+            AccessProfileMutationAdmissionDecision>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<
+            AccessProfileMutationAdmissionOperation>(json, JsonOptions));
     }
 
     [Fact]
@@ -78,6 +111,12 @@ public sealed class AccessControlContractEnumJsonTests
             JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
             AccessRoleAssignmentStatus.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessProfileMutationAdmissionDecision.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessProfileMutationAdmissionOperation.Unknown,
             JsonOptions));
     }
 

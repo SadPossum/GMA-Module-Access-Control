@@ -6,12 +6,14 @@ using Gma.Framework.Runtime.Identity;
 using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Ports;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.ValueObjects;
 
 internal sealed class EnsureAccessProfileCommandHandler(
     IAccessProfileRepository repository,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessProfileMutationAdmissionPolicy mutationAdmission,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<EnsureAccessProfileCommand, AccessProfileDetails>
 {
@@ -37,6 +39,18 @@ internal sealed class EnsureAccessProfileCommandHandler(
         if (existing is not null)
         {
             return Result.Success(existing);
+        }
+
+        Result admitted = await mutationAdmission.AuthorizeAsync(
+            new AccessProfileMutationAdmissionContext(
+                AccessProfileMutationAdmissionOperation.EnsureProfile,
+                command.OwnerScope,
+                command.Actor,
+                ProfileKey: key.Value.Value),
+            cancellationToken).ConfigureAwait(false);
+        if (admitted.IsFailure)
+        {
+            return Result.Failure<AccessProfileDetails>(admitted.Error);
         }
 
         Result delegation = await permissionPolicy.ValidateDelegationAsync(

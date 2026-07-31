@@ -16,6 +16,7 @@ using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using DomainChangeKind = Gma.Modules.AccessControl.Domain.Enums.AccessProfileChangeKind;
 using Xunit;
 
@@ -40,6 +41,9 @@ public sealed class AccessProfileProvisioningTests
         EnsureAccessProfileCommandHandler handler = new(
             repository,
             CreatePermissionPolicy(authorization),
+            new AccessProfileMutationAdmissionPolicy(
+                [],
+                NullLogger<AccessProfileMutationAdmissionPolicy>.Instance),
             new SequenceIdGenerator(),
             new FixedClock(Now.AddMinutes(1)));
 

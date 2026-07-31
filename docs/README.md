@@ -3,6 +3,7 @@
 Development tasks:
 
 - [Access profile management contracts](access-profile-management-contracts-task.md)
+- [Access-profile mutation admission](access-profile-mutation-admission-policy-task.md)
 - [Scoped access-profile assignments](scoped-access-profile-assignments-task.md)
 - [AccessControl production hardening](access-control-production-hardening-task.md)
 - [AccessControl domain completion](access-control-domain-completion-task.md)
@@ -52,6 +53,14 @@ Registration only establishes eligibility. Create, update, and assignment operat
 Delegation is evaluated through the framework batch authorization contract, so one profile operation does not perform one provider round trip per permission.
 
 Products may additionally register one or more `IAccessProfileAssignmentPolicy` implementations when profile assignment eligibility depends on product-owned state. Policies run after AccessControl's delegation checks and before persistence; any rejection fails closed. AccessControl intentionally does not know what membership, employment, or another product lifecycle means.
+
+Products may register conjunctive
+`IAccessProfileMutationAdmissionPolicy` implementations for profile create,
+update, archive, and non-idempotent ensure operations. Policies receive only
+the generic owner scope, actor, operation, and optional profile id or key.
+Denied, unavailable, unknown, and failed policy evaluations leave the profile
+unchanged. Exact ensure replays bypass admission because they do not mutate
+state. Hosts that register no policy retain the module's default behavior.
 
 Products may register conjunctive `IAccessRoleAssignmentPolicy` implementations
 for compatibility-role grants. Policies receive only the generic subject,
