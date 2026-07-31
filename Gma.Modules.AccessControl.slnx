@@ -29,6 +29,7 @@
     <File Path="docs/access-control-domain-completion-task.md" />
     <File Path="docs/access-control-production-hardening-task.md" />
     <File Path="docs/access-profile-management-contracts-task.md" />
+    <File Path="docs/access-profile-mutation-admission-policy-task.md" />
     <File Path="docs/scoped-access-profile-assignments-task.md" />
     <File Path="docs/temporary-role-assignment-leases-task.md" />
   </Folder>
