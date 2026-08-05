@@ -11,6 +11,7 @@ using Gma.Modules.AccessControl.Domain.Aggregates;
 
 internal sealed class ArchiveAccessProfileCommandHandler(
     IAccessProfileRepository repository,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessProfileMutationAdmissionPolicy mutationAdmission,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<ArchiveAccessProfileCommand, Unit>
@@ -23,6 +24,14 @@ internal sealed class ArchiveAccessProfileCommandHandler(
             .GetAsync(command.ProfileId, command.OwnerScope, tracking: true, cancellationToken)
             .ConfigureAwait(false);
         if (profile is null) return Result.Failure<Unit>(AccessControlApplicationErrors.ProfileNotFound);
+
+        if (!await scopeWriteAdmission.AreOpenAsync(
+                [command.OwnerScope],
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<Unit>(
+                AccessControlApplicationErrors.ProfileMutationRejected);
+        }
 
         Result admitted = await mutationAdmission.AuthorizeAsync(
             new AccessProfileMutationAdmissionContext(

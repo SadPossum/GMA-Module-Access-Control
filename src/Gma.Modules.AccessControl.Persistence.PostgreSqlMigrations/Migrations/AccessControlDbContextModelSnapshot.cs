@@ -289,6 +289,219 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyOperation", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("BatchSize")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CompletedBatchCount")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ExpectedRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("ProofVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RemovalProofSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<long>("RemovedRecordCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RequestSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<long>("ResultingRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ScopeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("ScopeValue")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<int>("Stage")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TransportScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("ScopeHash")
+                        .IsUnique();
+
+                    b.ToTable("access_scope_destroy_operations", "access", t =>
+                        {
+                            t.HasCheckConstraint("CK_access_scope_destroy_operations_progress", "\"BatchSize\" >= 1 AND \"BatchSize\" <= 1000 AND \"Stage\" >= 1 AND \"Stage\" <= 6 AND \"RemovedRecordCount\" >= 0 AND \"CompletedBatchCount\" >= 0 AND \"ProofVersion\" = 1 AND \"UpdatedAtUtc\" >= \"StartedAtUtc\"");
+
+                            t.HasCheckConstraint("CK_access_scope_destroy_operations_revisions", "\"ExpectedRevision\" >= 0 AND \"ResultingRevision\" > \"ExpectedRevision\"");
+                        });
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyPrincipalCandidate", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("SubjectKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SubjectId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("OperationId", "SubjectKind", "SubjectId");
+
+                    b.ToTable("access_scope_destroy_principal_candidates", "access");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyReceipt", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("BatchSize")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CompletedBatchCount")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ExpectedRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RemovalProofSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<int>("RemovalProofVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("RemovedRecordCount")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RequestSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<long>("ResultingRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ScopeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("ScopeValue")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TransportScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("ScopeHash")
+                        .IsUnique();
+
+                    b.ToTable("access_scope_destroy_receipts", "access", t =>
+                        {
+                            t.HasTrigger("access_scope_destroy_receipts_append_only");
+
+                            t.HasCheckConstraint("CK_access_scope_destroy_receipts_progress", "\"BatchSize\" >= 1 AND \"BatchSize\" <= 1000 AND ((\"RemovedRecordCount\" = 0 AND \"CompletedBatchCount\" = 0) OR (\"RemovedRecordCount\" > 0 AND \"CompletedBatchCount\" > 0)) AND \"RemovalProofVersion\" = 1 AND \"CompletedAtUtc\" >= \"StartedAtUtc\"");
+
+                            t.HasCheckConstraint("CK_access_scope_destroy_receipts_revisions", "\"ExpectedRevision\" >= 0 AND \"ResultingRevision\" > \"ExpectedRevision\"");
+                        });
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeState", b =>
+                {
+                    b.Property<string>("ScopeHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<Guid?>("CloseOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CloseRequestSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<long>("CloseRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsClosed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ScopeValue")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("TransportScopeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("ScopeHash");
+
+                    b.HasIndex("TransportScopeId")
+                        .IsUnique();
+
+                    b.HasIndex("IsClosed", "ClosedAtUtc", "ScopeHash");
+
+                    b.ToTable("access_scope_states", "access", t =>
+                        {
+                            t.HasTrigger("access_scope_states_closed_immutable");
+
+                            t.HasCheckConstraint("CK_access_scope_states_close_revision", "\"CloseRevision\" >= 0");
+
+                            t.HasCheckConstraint("CK_access_scope_states_closure", "(CAST(\"IsClosed\" AS integer) = 0 AND \"CloseRevision\" = 0 AND \"CloseOperationId\" IS NULL AND \"CloseRequestSha256\" IS NULL AND \"ClosedAtUtc\" IS NULL) OR (CAST(\"IsClosed\" AS integer) = 1 AND \"CloseRevision\" >= 1 AND \"CloseOperationId\" IS NOT NULL AND \"CloseRequestSha256\" IS NOT NULL AND \"ClosedAtUtc\" IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessPrincipal", b =>
                 {
                     b.Property<int>("Kind")
@@ -444,6 +657,33 @@ namespace Gma.Modules.AccessControl.Persistence.PostgreSqlMigrations.Migrations
                         .IsRequired();
 
                     b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyOperation", b =>
+                {
+                    b.HasOne("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeState", null)
+                        .WithOne()
+                        .HasForeignKey("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyOperation", "ScopeHash")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyPrincipalCandidate", b =>
+                {
+                    b.HasOne("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyOperation", null)
+                        .WithMany()
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyReceipt", b =>
+                {
+                    b.HasOne("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeState", null)
+                        .WithOne()
+                        .HasForeignKey("Gma.Modules.AccessControl.Persistence.Entities.AccessControlScopeDestroyReceipt", "ScopeHash")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Gma.Modules.AccessControl.Persistence.Entities.AccessRolePermission", b =>

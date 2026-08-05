@@ -23,6 +23,8 @@ internal sealed class AccessControlRbacRepository(
     ISystemClock clock)
     : IAccessControlRbacRepository
 {
+    private const int PermissionQuerySubjectBatchSize = 500;
+
     private static readonly AccessScopeMatchOptions OwnerWildcardScopeMatchOptions = new(
         AllowAncestorScopeGrants: true,
         AllowGlobalScopeGrant: true);
@@ -278,7 +280,6 @@ internal sealed class AccessControlRbacRepository(
         foreach (IGrouping<AccessRequirementGroupKey, IndexedAccessRequirement> group in indexed.GroupBy(item =>
                      new AccessRequirementGroupKey(
                          item.Requirement.Subject.Kind,
-                         item.Requirement.Subject.Id,
                          item.Requirement.Scope.Value)))
         {
             IndexedAccessRequirement first = group.First();
@@ -286,19 +287,31 @@ internal sealed class AccessControlRbacRepository(
                 .Select(item => item.Requirement.Permission)
                 .Distinct()
                 .ToArray();
-            PersistedPermissionGrant[] candidateGrants = await this.QuerySubjectPermissionGrants(
-                    first.Requirement.Subject,
-                    permissions,
-                    GetCandidateScopeValues(first.Requirement.Scope))
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
+            string[][] subjectBatches = group
+                .Select(item => item.Requirement.Subject.Id)
+                .Distinct(StringComparer.Ordinal)
+                .Chunk(PermissionQuerySubjectBatchSize)
+                .ToArray();
+            List<PersistedPermissionGrant> candidateGrants = [];
+            foreach (string[] subjectIds in subjectBatches)
+            {
+                PersistedPermissionGrant[] batchGrants = await this.QuerySubjectPermissionGrants(
+                        first.Requirement.Subject.Kind,
+                        subjectIds,
+                        permissions,
+                        GetCandidateScopeValues(first.Requirement.Scope))
+                    .ToArrayAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                candidateGrants.AddRange(batchGrants);
+            }
 
             foreach (IndexedAccessRequirement item in group)
             {
                 AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(
                     item.Requirement.Permission);
                 decisions[item.Index] = candidateGrants.Any(grant =>
-                    grant.PermissionCode == AccessControlPermissionGrant.OwnerWildcard
+                    grant.SubjectId == item.Requirement.Subject.Id &&
+                    (grant.PermissionCode == AccessControlPermissionGrant.OwnerWildcard
                         ? AccessScopeMatcher.GrantSatisfiesRequest(
                             grant.Scope,
                             item.Requirement.Scope,
@@ -307,7 +320,7 @@ internal sealed class AccessControlRbacRepository(
                           AccessScopeMatcher.GrantSatisfiesRequest(
                               grant.Scope,
                               item.Requirement.Scope,
-                              permissionMatchOptions));
+                              permissionMatchOptions)));
             }
         }
 
@@ -324,7 +337,8 @@ internal sealed class AccessControlRbacRepository(
 
         AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(permission);
         PersistedPermissionGrant[] grants = await this.QuerySubjectPermissionGrants(
-                subject,
+                subject.Kind,
+                [subject.Id],
                 [permission],
                 candidateScopeValues: null)
             .ToArrayAsync(cancellationToken)
@@ -897,11 +911,12 @@ internal sealed class AccessControlRbacRepository(
     }
 
     private IQueryable<PersistedPermissionGrant> QuerySubjectPermissionGrants(
-        AccessSubject subject,
+        AccessSubjectKind subjectKind,
+        IReadOnlyCollection<string> subjectIds,
         IReadOnlyCollection<PermissionCode> permissions,
         string[]? candidateScopeValues)
     {
-        int subjectKind = ToPersistedKind(subject);
+        int persistedSubjectKind = ToPersistedKind(subjectKind);
         string[] requestedPermissionCodes = permissions
             .Select(permission => permission.Value)
             .Distinct(StringComparer.Ordinal)
@@ -915,8 +930,8 @@ internal sealed class AccessControlRbacRepository(
         IQueryable<AccessSubjectRoleAssignment> assignments = dbContext.SubjectRoleAssignments
             .AsNoTracking()
             .Where(assignment =>
-                assignment.SubjectKind == subjectKind &&
-                assignment.SubjectId == subject.Id &&
+                assignment.SubjectKind == persistedSubjectKind &&
+                subjectIds.Contains(assignment.SubjectId) &&
                 assignment.RevokedAtUnixMilliseconds == null &&
                 (assignment.ExpiresAtUnixMilliseconds == null ||
                  assignment.ExpiresAtUnixMilliseconds > nowUnixMilliseconds));
@@ -952,8 +967,8 @@ internal sealed class AccessControlRbacRepository(
             dbContext.AccessProfileAssignments
                 .AsNoTracking()
                 .Where(assignment =>
-                    assignment.SubjectKind == subjectKind &&
-                    assignment.SubjectId == subject.Id &&
+                    assignment.SubjectKind == persistedSubjectKind &&
+                    subjectIds.Contains(assignment.SubjectId) &&
                     assignment.Profile != null &&
                     assignment.Profile.Status == DomainAccessProfileStatus.Active);
         if (candidateScopeValues is not null)
@@ -1246,13 +1261,18 @@ internal sealed class AccessControlRbacRepository(
     }
 
     private static int ToPersistedKind(AccessSubject subject)
+        => ToPersistedKind(subject.Kind);
+
+    private static int ToPersistedKind(AccessSubjectKind subjectKind)
     {
-        if (subject.Kind == AccessSubjectKind.Unknown || !Enum.IsDefined(subject.Kind))
+        if (subjectKind == AccessSubjectKind.Unknown || !Enum.IsDefined(subjectKind))
         {
-            throw new ArgumentException("Access subject kind must be a defined non-unknown value.", nameof(subject));
+            throw new ArgumentException(
+                "Access subject kind must be a defined non-unknown value.",
+                nameof(subjectKind));
         }
 
-        return (int)subject.Kind;
+        return (int)subjectKind;
     }
 
     private static bool IsPostgreSqlSerializationFailure(Exception exception)
@@ -1335,6 +1355,5 @@ internal sealed class AccessControlRbacRepository(
 
     private sealed record AccessRequirementGroupKey(
         AccessSubjectKind SubjectKind,
-        string SubjectId,
         string ScopeValue);
 }

@@ -41,6 +41,7 @@ public sealed class AccessProfileProvisioningTests
         EnsureAccessProfileCommandHandler handler = new(
             repository,
             CreatePermissionPolicy(authorization),
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileMutationAdmissionPolicy(
                 [],
                 NullLogger<AccessProfileMutationAdmissionPolicy>.Instance),
@@ -90,6 +91,7 @@ public sealed class AccessProfileProvisioningTests
             profiles,
             rbac,
             CreatePermissionPolicy(new RecordingAuthorization()),
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([]),
             ids,
             new FixedClock(Now.AddMinutes(1)));
@@ -142,6 +144,7 @@ public sealed class AccessProfileProvisioningTests
                 new ExactScopeMatchOptionsResolver(),
                 new FixedClock(Now)),
             CreatePermissionPolicy(new RecordingAuthorization()),
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([new DenyingAssignmentPolicy()]),
             ids,
             new FixedClock(Now.AddMinutes(1)));
@@ -178,6 +181,7 @@ public sealed class AccessProfileProvisioningTests
             profiles,
             rbac,
             CreatePermissionPolicy(new RecordingAuthorization()),
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([]),
             ids,
             new FixedClock(Now.AddMinutes(1)));
@@ -208,6 +212,7 @@ public sealed class AccessProfileProvisioningTests
             profiles,
             rbac,
             CreatePermissionPolicy(new RecordingAuthorization()),
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([]),
             ids,
             new FixedClock(Now.AddMinutes(2)));
@@ -261,6 +266,7 @@ public sealed class AccessProfileProvisioningTests
                 new ExactScopeMatchOptionsResolver(),
                 new FixedClock(Now)),
             CreatePermissionPolicy(new RecordingAuthorization()),
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([]),
             ids,
             new FixedClock(Now.AddMinutes(1)));

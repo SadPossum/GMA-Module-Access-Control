@@ -152,6 +152,7 @@ public sealed class TemporaryRoleAssignmentTests
         await SeedRoleAsync(repository, dbContext, "support-reader", "properties.read");
         AssignRoleCommandHandler deniedHandler = new(
             repository,
+            AccessControlTestAdmissions.AllowAll(),
             new AccessRoleAssignmentPolicy([new DenyAllAssignmentsPolicy()]),
             clock);
         Result<Unit> denied = await deniedHandler.HandleAsync(
@@ -181,6 +182,7 @@ public sealed class TemporaryRoleAssignmentTests
         CapturingAssignmentPolicy policy = new();
         AssignRoleCommandHandler handler = new(
             repository,
+            AccessControlTestAdmissions.AllowAll(),
             new AccessRoleAssignmentPolicy([policy]),
             clock);
 
@@ -324,7 +326,11 @@ public sealed class TemporaryRoleAssignmentTests
     private static AssignRoleCommandHandler CreateAssignHandler(
         AccessControlRbacRepository repository,
         ISystemClock clock) =>
-        new(repository, new AccessRoleAssignmentPolicy([]), clock);
+        new(
+            repository,
+            AccessControlTestAdmissions.AllowAll(),
+            new AccessRoleAssignmentPolicy([]),
+            clock);
 
     private static async Task SeedRoleAsync(
         AccessControlRbacRepository repository,

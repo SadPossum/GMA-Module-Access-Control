@@ -9,6 +9,7 @@ using Gma.Modules.AccessControl.Application.Ports;
 
 internal sealed class AssignRoleCommandHandler(
     IAccessControlRbacRepository repository,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessRoleAssignmentPolicy assignmentPolicy,
     ISystemClock clock)
     : ICommandHandler<AssignRoleCommand, Unit>
@@ -56,6 +57,14 @@ internal sealed class AssignRoleCommandHandler(
                 StringComparer.Ordinal))
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.TemporaryOwnerAssignmentNotAllowed);
+        }
+
+        if (!await scopeWriteAdmission.AreOpenAsync(
+                [scope],
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<Unit>(
+                AccessControlApplicationErrors.AssignmentRejected);
         }
 
         if (!await assignmentPolicy.IsAllowedAsync(

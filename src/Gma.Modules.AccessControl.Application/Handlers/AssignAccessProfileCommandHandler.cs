@@ -14,6 +14,7 @@ internal sealed class AssignAccessProfileCommandHandler(
     IAccessProfileRepository profiles,
     IAccessControlRbacRepository rbac,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessProfileAssignmentPolicy assignmentPolicy,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<AssignAccessProfileCommand, AccessProfileAssignmentDetails>
@@ -49,6 +50,24 @@ internal sealed class AssignAccessProfileCommandHandler(
             return Result.Failure<AccessProfileAssignmentDetails>(delegation.Error);
         }
 
+        if (await profiles.AssignmentExistsAsync(
+                profile.Id,
+                command.Subject,
+                command.AssignmentScope,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AccessProfileAssignmentDetails>(
+                AccessControlApplicationErrors.ProfileAssignmentAlreadyExists);
+        }
+
+        if (!await scopeWriteAdmission.AreOpenAsync(
+                [command.OwnerScope, command.AssignmentScope],
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AccessProfileAssignmentDetails>(
+                AccessControlApplicationErrors.ProfileAssignmentRejected);
+        }
+
         if (!await assignmentPolicy.IsAllowedAsync(
                 profile,
                 command.OwnerScope,
@@ -60,15 +79,6 @@ internal sealed class AssignAccessProfileCommandHandler(
         {
             return Result.Failure<AccessProfileAssignmentDetails>(
                 AccessControlApplicationErrors.ProfileAssignmentRejected);
-        }
-
-        if (await profiles.AssignmentExistsAsync(
-                profile.Id,
-                command.Subject,
-                command.AssignmentScope,
-                cancellationToken).ConfigureAwait(false))
-        {
-            return Result.Failure<AccessProfileAssignmentDetails>(AccessControlApplicationErrors.ProfileAssignmentAlreadyExists);
         }
 
         DateTimeOffset nowUtc = clock.UtcNow;

@@ -95,6 +95,7 @@ public sealed class AccessProfilePermissionPolicyTests
             repository,
             rbac: null!,
             policy,
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([]),
             ids: null!,
             clock: null!);
@@ -133,6 +134,7 @@ public sealed class AccessProfilePermissionPolicyTests
             repository,
             rbac: null!,
             permissionPolicy,
+            AccessControlTestAdmissions.AllowAll(),
             new AccessProfileAssignmentPolicy([new DenyingAssignmentPolicy()]),
             ids: null!,
             clock: null!);

@@ -17,6 +17,7 @@ internal sealed class ReconcileScopedAccessProfileAssignmentsCommandHandler(
     IAccessProfileRepository profiles,
     IAccessControlRbacRepository rbac,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessProfileAssignmentPolicy assignmentPolicy,
     IIdGenerator ids,
     ISystemClock clock)
@@ -63,6 +64,32 @@ internal sealed class ReconcileScopedAccessProfileAssignmentsCommandHandler(
         }
 
         Dictionary<Guid, AccessProfile> profilesById = desiredProfiles.ToDictionary(profile => profile.Id);
+        IReadOnlyList<AccessProfileAssignment> currentAssignments = await profiles
+            .ListTrackedAssignmentsAsync(command.Subject, command.OwnerScope, null, cancellationToken)
+            .ConfigureAwait(false);
+        HashSet<(Guid ProfileId, string Scope)> desiredKeys = desiredTargets
+            .Select(target => (target.ProfileId, target.AssignmentScope.Value))
+            .ToHashSet();
+        HashSet<(Guid ProfileId, string Scope)> currentKeys = currentAssignments
+            .Select(assignment => (assignment.ProfileId, assignment.AssignmentScopeValue))
+            .ToHashSet();
+        AccessProfileAssignment[] removals = currentAssignments
+            .Where(assignment => !desiredKeys.Contains((assignment.ProfileId, assignment.AssignmentScopeValue)))
+            .ToArray();
+        AccessProfileAssignmentTarget[] additions = desiredTargets
+            .Where(target => !currentKeys.Contains((target.ProfileId, target.AssignmentScope.Value)))
+            .ToArray();
+        if (additions.Length > 0 &&
+            !await scopeWriteAdmission.AreOpenAsync(
+                additions
+                    .Select(target => target.AssignmentScope)
+                    .Append(command.OwnerScope)
+                    .ToArray(),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Failure(AccessControlApplicationErrors.ProfileAssignmentRejected);
+        }
+
         foreach (IGrouping<string, AccessProfileAssignmentTarget> scopeTargets in desiredTargets
                      .GroupBy(target => target.AssignmentScope.Value, StringComparer.Ordinal))
         {
@@ -96,22 +123,6 @@ internal sealed class ReconcileScopedAccessProfileAssignmentsCommandHandler(
                 }
             }
         }
-
-        IReadOnlyList<AccessProfileAssignment> currentAssignments = await profiles
-            .ListTrackedAssignmentsAsync(command.Subject, command.OwnerScope, null, cancellationToken)
-            .ConfigureAwait(false);
-        HashSet<(Guid ProfileId, string Scope)> desiredKeys = desiredTargets
-            .Select(target => (target.ProfileId, target.AssignmentScope.Value))
-            .ToHashSet();
-        HashSet<(Guid ProfileId, string Scope)> currentKeys = currentAssignments
-            .Select(assignment => (assignment.ProfileId, assignment.AssignmentScopeValue))
-            .ToHashSet();
-        AccessProfileAssignment[] removals = currentAssignments
-            .Where(assignment => !desiredKeys.Contains((assignment.ProfileId, assignment.AssignmentScopeValue)))
-            .ToArray();
-        AccessProfileAssignmentTarget[] additions = desiredTargets
-            .Where(target => !currentKeys.Contains((target.ProfileId, target.AssignmentScope.Value)))
-            .ToArray();
 
         DateTimeOffset nowUtc = clock.UtcNow;
         foreach (AccessProfileAssignment assignment in removals)

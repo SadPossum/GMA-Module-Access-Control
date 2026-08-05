@@ -13,6 +13,7 @@ using Gma.Modules.AccessControl.Domain.ValueObjects;
 internal sealed class CreateAccessProfileCommandHandler(
     IAccessProfileRepository repository,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessProfileMutationAdmissionPolicy mutationAdmission,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<CreateAccessProfileCommand, AccessProfileDetails>
@@ -30,6 +31,14 @@ internal sealed class CreateAccessProfileCommandHandler(
         if (await repository.KeyExistsAsync(command.OwnerScope, key.Value.Value, cancellationToken).ConfigureAwait(false))
         {
             return Result.Failure<AccessProfileDetails>(AccessControlApplicationErrors.ProfileAlreadyExists);
+        }
+
+        if (!await scopeWriteAdmission.AreOpenAsync(
+                [command.OwnerScope],
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AccessProfileDetails>(
+                AccessControlApplicationErrors.ProfileMutationRejected);
         }
 
         Result admitted = await mutationAdmission.AuthorizeAsync(

@@ -29,7 +29,7 @@ using DomainChangeKind = Gma.Modules.AccessControl.Domain.Enums.AccessProfileCha
 
 [Trait("Category", "Docker")]
 [Trait("Category", "Integration")]
-public sealed class AccessControlPostgreSqlIntegrationTests
+public sealed partial class AccessControlPostgreSqlIntegrationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 19, 10, 0, 0, TimeSpan.Zero);
     private static readonly AccessScope TenantScope = AccessScope.Parse("tenant:tenant-a");
@@ -296,6 +296,7 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         const string permissionCode = "reservations.read";
         const string secondPermissionCode = "guests.read";
         AccessSubject subject = AccessSubject.User("user-a");
+        AccessSubject peerSubject = AccessSubject.User("user-b");
         AccessSubject propertySubject = AccessSubject.User("property-user");
         AccessScope propertyScope = AccessScope.Parse("tenant:tenant-a/property:property-a");
         AccessScope siblingPropertyScope = AccessScope.Parse("tenant:tenant-a/property:property-b");
@@ -305,10 +306,12 @@ public sealed class AccessControlPostgreSqlIntegrationTests
         {
             AccessControlRbacRepository rbac = CreateRbacRepository(seed);
             await rbac.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+            await rbac.EnsureSubjectAsync(peerSubject, Now, CancellationToken.None);
             await rbac.EnsureSubjectAsync(propertySubject, Now, CancellationToken.None);
             seed.AccessProfiles.AddRange(profile, propertyProfile);
             seed.AccessProfileAssignments.AddRange(
                 CreateAssignment(profile.Id, subject),
+                CreateAssignment(profile.Id, peerSubject),
                 CreateAssignment(propertyProfile.Id, propertySubject, propertyScope));
             profile.RecordAssignmentChange(
                 Guid.NewGuid(), DomainChangeKind.Assigned, Actor, ToDomain(subject), Now.AddMinutes(1));
@@ -323,10 +326,12 @@ public sealed class AccessControlPostgreSqlIntegrationTests
             [
                 new AccessRequirement(subject, PermissionCode.Create(permissionCode), TenantScope),
                 new AccessRequirement(subject, PermissionCode.Create(secondPermissionCode), TenantScope),
-                new AccessRequirement(subject, PermissionCode.Create("inventory.read"), TenantScope)
+                new AccessRequirement(subject, PermissionCode.Create("inventory.read"), TenantScope),
+                new AccessRequirement(peerSubject, PermissionCode.Create(permissionCode), TenantScope),
+                new AccessRequirement(peerSubject, PermissionCode.Create("inventory.read"), TenantScope)
             ], CancellationToken.None);
 
-            Assert.Equal([true, true, false], batch);
+            Assert.Equal([true, true, false, true, false], batch);
             Assert.Equal(1, commands.ReaderCommands);
             bool otherTenantDenied = await rbac.HasPermissionAsync(
                 subject,

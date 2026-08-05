@@ -53,6 +53,8 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(services, descriptor =>
             descriptor.ServiceType ==
             typeof(AccessProfileMutationAdmissionPolicy));
+        Assert.Single(services, descriptor =>
+            descriptor.ServiceType == typeof(AccessControlScopeWriteAdmission));
         Assert.Single(services, HasService<ICommandHandler<CreateAccessProfileCommand, AccessProfileDetails>, CreateAccessProfileCommandHandler>());
         Assert.Single(services, HasService<ICommandValidator<CreateAccessProfileCommand>, CreateAccessProfileCommandValidator>());
         Assert.Single(services, HasService<ICommandValidator<UpdateAccessProfileCommand>, UpdateAccessProfileCommandValidator>());
@@ -109,6 +111,9 @@ public sealed class AccessControlRegistrationTests
         Assert.Single(builder.Services, descriptor => descriptor.ServiceType == typeof(AccessControlDbContext));
         Assert.Single(builder.Services, HasService<IAccessControlRbacRepository, AccessControlRbacRepository>());
         Assert.Single(builder.Services, HasService<IAccessProfileRepository, AccessProfileRepository>());
+        Assert.Single(builder.Services, HasService<IAccessControlScopeLifecycle, AccessControlScopeLifecycleService>());
+        Assert.Single(builder.Services, descriptor =>
+            descriptor.ServiceType == typeof(IAccessControlScopeWriteAdmissionReader));
         Assert.Single(builder.Services, HasService<IUnitOfWork, AccessControlUnitOfWork>());
         Assert.True(typeof(ITransactionalUnitOfWork).IsAssignableFrom(typeof(AccessControlUnitOfWork)));
         Assert.Single(builder.Services, HasService<IInboxStore, AccessControlInboxStore>());

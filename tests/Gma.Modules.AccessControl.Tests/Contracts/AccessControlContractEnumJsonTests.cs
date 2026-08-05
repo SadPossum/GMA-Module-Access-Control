@@ -82,6 +82,63 @@ public sealed class AccessControlContractEnumJsonTests
         AssertWireValue(operation, wireName);
 
     [Theory]
+    [InlineData(AccessControlScopeStatus.Invalid, "invalid")]
+    [InlineData(AccessControlScopeStatus.Missing, "missing")]
+    [InlineData(AccessControlScopeStatus.Open, "open")]
+    [InlineData(AccessControlScopeStatus.Closed, "closed")]
+    public void Scope_status_uses_stable_wire_names(
+        AccessControlScopeStatus status,
+        string wireName) =>
+        AssertWireValue(status, wireName);
+
+    [Theory]
+    [InlineData(AccessControlScopeExportStatus.Invalid, "invalid")]
+    [InlineData(AccessControlScopeExportStatus.Completed, "completed")]
+    [InlineData(AccessControlScopeExportStatus.Missing, "missing")]
+    [InlineData(AccessControlScopeExportStatus.Closed, "closed")]
+    [InlineData(AccessControlScopeExportStatus.Stale, "stale")]
+    public void Scope_export_status_uses_stable_wire_names(
+        AccessControlScopeExportStatus status,
+        string wireName) =>
+        AssertWireValue(status, wireName);
+
+    [Theory]
+    [InlineData(AccessControlScopeExportStore.RoleAssignments, "role-assignments")]
+    [InlineData(AccessControlScopeExportStore.Profiles, "profiles")]
+    [InlineData(AccessControlScopeExportStore.ProfileAssignments, "profile-assignments")]
+    [InlineData(AccessControlScopeExportStore.ProfileChanges, "profile-changes")]
+    public void Scope_export_store_uses_stable_wire_names(
+        AccessControlScopeExportStore store,
+        string wireName) =>
+        AssertWireValue(store, wireName);
+
+    [Theory]
+    [InlineData(AccessControlScopeDestroyStatus.Invalid, "invalid")]
+    [InlineData(AccessControlScopeDestroyStatus.InProgress, "in-progress")]
+    [InlineData(AccessControlScopeDestroyStatus.Completed, "completed")]
+    [InlineData(AccessControlScopeDestroyStatus.Replayed, "replayed")]
+    [InlineData(AccessControlScopeDestroyStatus.Stale, "stale")]
+    [InlineData(AccessControlScopeDestroyStatus.Busy, "busy")]
+    [InlineData(AccessControlScopeDestroyStatus.Conflict, "conflict")]
+    public void Scope_destroy_status_uses_stable_wire_names(
+        AccessControlScopeDestroyStatus status,
+        string wireName) =>
+        AssertWireValue(status, wireName);
+
+    [Theory]
+    [InlineData(AccessControlScopeDestructionStage.InboxMessages, "inbox-messages")]
+    [InlineData(AccessControlScopeDestructionStage.ProfileChanges, "profile-changes")]
+    [InlineData(AccessControlScopeDestructionStage.ProfileAssignments, "profile-assignments")]
+    [InlineData(AccessControlScopeDestructionStage.RoleAssignments, "role-assignments")]
+    [InlineData(AccessControlScopeDestructionStage.Profiles, "profiles")]
+    [InlineData(AccessControlScopeDestructionStage.OrphanPrincipals, "orphan-principals")]
+    [InlineData(AccessControlScopeDestructionStage.Completed, "completed")]
+    public void Scope_destruction_stage_uses_stable_wire_names(
+        AccessControlScopeDestructionStage stage,
+        string wireName) =>
+        AssertWireValue(stage, wireName);
+
+    [Theory]
     [InlineData("1")]
     [InlineData("\"unknown\"")]
     [InlineData("\"future\"")]
@@ -96,6 +153,11 @@ public sealed class AccessControlContractEnumJsonTests
             AccessProfileMutationAdmissionDecision>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<
             AccessProfileMutationAdmissionOperation>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlScopeStatus>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlScopeExportStatus>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlScopeExportStore>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlScopeDestroyStatus>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlScopeDestructionStage>(json, JsonOptions));
     }
 
     [Fact]
@@ -117,6 +179,21 @@ public sealed class AccessControlContractEnumJsonTests
             JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
             AccessProfileMutationAdmissionOperation.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessControlScopeStatus.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessControlScopeExportStatus.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessControlScopeExportStore.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessControlScopeDestroyStatus.Unknown,
+            JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
+            AccessControlScopeDestructionStage.Unknown,
             JsonOptions));
     }
 

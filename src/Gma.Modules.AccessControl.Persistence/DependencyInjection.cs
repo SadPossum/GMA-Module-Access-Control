@@ -6,6 +6,7 @@ using Gma.Framework.Cqrs.Infrastructure;
 using Gma.Framework.Messaging;
 using Gma.Framework.Persistence.EntityFrameworkCore;
 using Gma.Modules.AccessControl.Application.Ports;
+using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,11 @@ public static class DependencyInjection
 
         builder.Services.TryAddScoped<IAccessControlRbacRepository, AccessControlRbacRepository>();
         builder.Services.TryAddScoped<IAccessProfileRepository, AccessProfileRepository>();
+        builder.Services.TryAddScoped<IAccessControlScopeLifecycle, AccessControlScopeLifecycleService>();
+        builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<
+                IAccessControlScopeWriteAdmissionReader,
+                AccessControlScopeAdmissionPolicy>());
         builder.Services.TryAddEnumerable(ServiceDescriptor.Scoped(
             typeof(ICommandPipelineBehavior<,>),
             typeof(AccessControlPersistenceRetryBehavior<,>)));

@@ -14,6 +14,7 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
     IAccessProfileRepository profiles,
     IAccessControlRbacRepository rbac,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessProfileAssignmentPolicy assignmentPolicy,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<ReconcileAccessProfileAssignmentsCommand, AccessProfileAssignmentReconciliationDetails>
@@ -56,6 +57,32 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
                 AccessControlApplicationErrors.ProfileNotFound);
         }
 
+        IReadOnlyList<AccessProfileAssignment> currentAssignments = await profiles
+            .ListTrackedAssignmentsAsync(
+                command.Subject,
+                command.OwnerScope,
+                command.AssignmentScope,
+                cancellationToken)
+            .ConfigureAwait(false);
+        HashSet<Guid> desiredSet = desiredIds.ToHashSet();
+        HashSet<Guid> currentIds = currentAssignments
+            .Select(assignment => assignment.ProfileId)
+            .ToHashSet();
+        AccessProfileAssignment[] removals = currentAssignments
+            .Where(assignment => !desiredSet.Contains(assignment.ProfileId))
+            .ToArray();
+        AccessProfile[] additions = desiredProfiles
+            .Where(profile => !currentIds.Contains(profile.Id))
+            .ToArray();
+        if (additions.Length > 0 &&
+            !await scopeWriteAdmission.AreOpenAsync(
+                [command.OwnerScope, command.AssignmentScope],
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AccessProfileAssignmentReconciliationDetails>(
+                AccessControlApplicationErrors.ProfileAssignmentRejected);
+        }
+
         foreach (AccessProfile profile in desiredProfiles)
         {
             Result delegation = await permissionPolicy.ValidateDelegationAsync(
@@ -81,22 +108,6 @@ internal sealed class ReconcileAccessProfileAssignmentsCommandHandler(
                     AccessControlApplicationErrors.ProfileAssignmentRejected);
             }
         }
-
-        IReadOnlyList<AccessProfileAssignment> currentAssignments = await profiles
-            .ListTrackedAssignmentsAsync(
-                command.Subject,
-                command.OwnerScope,
-                command.AssignmentScope,
-                cancellationToken)
-            .ConfigureAwait(false);
-        HashSet<Guid> desiredSet = desiredIds.ToHashSet();
-        HashSet<Guid> currentIds = currentAssignments.Select(assignment => assignment.ProfileId).ToHashSet();
-        AccessProfileAssignment[] removals = currentAssignments
-            .Where(assignment => !desiredSet.Contains(assignment.ProfileId))
-            .ToArray();
-        AccessProfile[] additions = desiredProfiles
-            .Where(profile => !currentIds.Contains(profile.Id))
-            .ToArray();
 
         DateTimeOffset nowUtc = clock.UtcNow;
         foreach (AccessProfileAssignment assignment in removals)

@@ -93,6 +93,7 @@ public sealed class AccessProfileMutationAdmissionTests
         CreateAccessProfileCommandHandler handler = new(
             new AccessProfileRepository(dbContext),
             CreatePermissionPolicy(),
+            AccessControlTestAdmissions.AllowAll(),
             Admission(policy),
             new TestIds(),
             new TestClock());
@@ -131,6 +132,7 @@ public sealed class AccessProfileMutationAdmissionTests
         UpdateAccessProfileCommandHandler handler = new(
             new AccessProfileRepository(dbContext),
             CreatePermissionPolicy(),
+            AccessControlTestAdmissions.AllowAll(),
             Admission(policy),
             new TestIds(),
             new TestClock());
@@ -170,6 +172,7 @@ public sealed class AccessProfileMutationAdmissionTests
         RecordingPolicy policy = DenyingPolicy();
         ArchiveAccessProfileCommandHandler handler = new(
             new AccessProfileRepository(dbContext),
+            AccessControlTestAdmissions.AllowAll(),
             Admission(policy),
             new TestIds(),
             new TestClock());
@@ -207,6 +210,7 @@ public sealed class AccessProfileMutationAdmissionTests
         EnsureAccessProfileCommandHandler handler = new(
             new AccessProfileRepository(dbContext),
             CreatePermissionPolicy(),
+            AccessControlTestAdmissions.AllowAll(),
             Admission(policy),
             new TestIds(),
             new TestClock());

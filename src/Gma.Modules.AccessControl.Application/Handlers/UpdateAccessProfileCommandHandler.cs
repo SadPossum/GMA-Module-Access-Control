@@ -12,6 +12,7 @@ using Gma.Modules.AccessControl.Domain.Aggregates;
 internal sealed class UpdateAccessProfileCommandHandler(
     IAccessProfileRepository repository,
     AccessProfilePermissionPolicy permissionPolicy,
+    AccessControlScopeWriteAdmission scopeWriteAdmission,
     AccessProfileMutationAdmissionPolicy mutationAdmission,
     IIdGenerator ids,
     ISystemClock clock) : ICommandHandler<UpdateAccessProfileCommand, AccessProfileDetails>
@@ -28,6 +29,14 @@ internal sealed class UpdateAccessProfileCommandHandler(
             .GetAsync(command.ProfileId, command.OwnerScope, tracking: true, cancellationToken)
             .ConfigureAwait(false);
         if (profile is null) return Result.Failure<AccessProfileDetails>(AccessControlApplicationErrors.ProfileNotFound);
+
+        if (!await scopeWriteAdmission.AreOpenAsync(
+                [command.OwnerScope],
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Result.Failure<AccessProfileDetails>(
+                AccessControlApplicationErrors.ProfileMutationRejected);
+        }
 
         Result admitted = await mutationAdmission.AuthorizeAsync(
             new AccessProfileMutationAdmissionContext(

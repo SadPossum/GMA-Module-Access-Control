@@ -2,6 +2,7 @@
 
 Development tasks:
 
+- [Access-control scope lifecycle](access-control-scope-lifecycle-task.md)
 - [Access profile management contracts](access-profile-management-contracts-task.md)
 - [Access-profile mutation admission](access-profile-mutation-admission-policy-task.md)
 - [Scoped access-profile assignments](scoped-access-profile-assignments-task.md)
@@ -21,7 +22,9 @@ It owns:
 - SQL Server and PostgreSQL migrations in the `access` schema;
 - the persisted `IAccessDecisionProvider` used by `IAccessAuthorizationService`;
 - the persisted `IAccessGrantScopeReader` used by modules that need grant scopes before building their own queries;
-- optional admin CLI/API front doors for bootstrap and role management.
+- a Contracts-only lifecycle facade for exporting, closing, and incrementally
+  erasing one non-global access-scope subtree; and
+- optional admin CLI/API front doors for bootstrap and role management;
 - an optional normal API front door for scoped profile management.
 
 It does not own:
@@ -96,6 +99,36 @@ await provisioner.EnsureAssignmentAsync(
 
 Do not consume `IAccessControlRbacRepository` outside AccessControl. It is a persistence-shaped Application port, not a module contract.
 Compatibility-role definitions supplied through the Contracts facade are reconciled exactly, so removing a seeded permission removes the persisted grant. Final-owner protection still rejects an unsafe wildcard removal.
+
+Products that retire a product-owned scope use the Contracts-only
+`IAccessControlScopeLifecycle`. A lifecycle coordinate contains both the
+canonical non-global `AccessScope` root and the transport scope id used by the
+module inbox. Products own that mapping; AccessControl does not infer tenant,
+workspace, property, or another product concept from either value.
+
+The lifecycle exports bounded, deterministic pages for compatibility-role
+assignments, access profiles, profile assignments, and profile history. Global
+role definitions are represented by ordered permission snapshots in the
+assignment export and are not erased with a scope. Assignments and history
+that target the selected subtree are included even when their profile is owned
+by an ancestor. Principals are erased only when no role or profile assignment
+references them anywhere.
+
+An export is fenced by the module's global management revision, so any
+concurrent AccessControl management write conservatively makes the selected
+revision stale. Destruction first closes the scope under the same
+provider-backed management lock, then removes at most one non-empty bounded
+batch per call and finishes with an exact-request replay receipt. Access-growing
+application operations perform one batched closure lookup inside that lock;
+the DbContext write barrier is the final guard for supported direct persistence
+paths. Revocation and unassignment remain available after closure. Scoped
+inbox messages arriving after closure are suppressed, while an actively
+processing message makes destruction return `Busy`.
+
+Closed snapshots expose both the resulting close revision and the durable
+selected revision. Callers must reuse that selected revision for exact retry;
+they must not derive it by subtracting one because the management revision is
+global and a previously missing scope can close after unrelated writes.
 
 Admin hosts compose the AccessControl admin front door explicitly:
 

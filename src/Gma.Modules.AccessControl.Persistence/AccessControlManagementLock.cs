@@ -10,7 +10,9 @@ internal static class AccessControlManagementLock
         CancellationToken cancellationToken)
     {
         int acquired = await dbContext.BootstrapState
-            .Where(state => state.Id == AccessBootstrapState.SingletonId)
+            .Where(state =>
+                state.Id == AccessBootstrapState.SingletonId &&
+                state.ManagementRevision < long.MaxValue)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(
                     state => state.ManagementRevision,
@@ -22,4 +24,23 @@ internal static class AccessControlManagementLock
             throw new InvalidOperationException("The access-control management safety lock is unavailable.");
         }
     }
+
+    public static async Task<long> AcquireAndReadRevisionAsync(
+        AccessControlDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        await AcquireAsync(dbContext, cancellationToken).ConfigureAwait(false);
+        return await ReadRevisionAsync(dbContext, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async Task<long> ReadRevisionAsync(
+        AccessControlDbContext dbContext,
+        CancellationToken cancellationToken) =>
+        await dbContext.BootstrapState
+            .AsNoTracking()
+            .Where(state => state.Id == AccessBootstrapState.SingletonId)
+            .Select(state => state.ManagementRevision)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
 }
