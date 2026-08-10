@@ -75,6 +75,42 @@ public sealed class AccessControlRoleProvisionerTests
             await provisioner.RemoveAssignmentAsync(first, "workspace-manager", scope));
     }
 
+    [Fact]
+    public async Task Contracts_facade_checks_any_normalized_role_in_one_exact_scope()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = new(
+            dbContext,
+            new SequenceIdGenerator(),
+            new ExactScopeMatchOptionsResolver(),
+            new FixedClock(Now));
+        AccessControlRoleProvisioner provisioner = new(repository, new FixedClock(Now));
+        AccessSubject subject = AccessSubject.User("member-a");
+        AccessScope tenantA = AccessScope.Parse("tenant:tenant-a");
+        AccessScope tenantB = AccessScope.Parse("tenant:tenant-b");
+
+        await provisioner.EnsureRoleAsync(new AccessControlRoleDefinition("workspace-member", []));
+        await provisioner.EnsureAssignmentAsync(subject, "workspace-member", tenantA);
+
+        Assert.True(await provisioner.HasAnyAssignmentAsync(
+            subject,
+            ["missing-role", " WORKSPACE-MEMBER ", "workspace-member"],
+            tenantA));
+        Assert.False(await provisioner.HasAnyAssignmentAsync(
+            subject,
+            ["workspace-member"],
+            tenantB));
+        Assert.False(await provisioner.HasAnyAssignmentAsync(subject, [], tenantA));
+
+        Assert.Equal(
+            AccessControlAssignmentRemovalOutcome.Removed,
+            await provisioner.RemoveAssignmentAsync(subject, "workspace-member", tenantA));
+        Assert.False(await provisioner.HasAnyAssignmentAsync(
+            subject,
+            ["workspace-member"],
+            tenantA));
+    }
+
     private static AccessControlDbContext CreateDbContext()
     {
         DbContextOptions<AccessControlDbContext> options = new DbContextOptionsBuilder<AccessControlDbContext>()

@@ -2,6 +2,7 @@
 
 Development tasks:
 
+- [Access assignment batch query](access-assignment-batch-query-task.md)
 - [Access assignment policy and lease closure](access-assignment-policy-and-lease-closure-task.md)
 - [Access-control scope lifecycle](access-control-scope-lifecycle-task.md)
 - [Access profile management contracts](access-profile-management-contracts-task.md)

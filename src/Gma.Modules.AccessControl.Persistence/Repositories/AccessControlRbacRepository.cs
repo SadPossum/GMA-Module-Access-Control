@@ -197,23 +197,40 @@ internal sealed class AccessControlRbacRepository(
             .ConfigureAwait(false);
     }
 
-    public async Task<bool> AssignmentExistsAsync(
+    public Task<bool> AssignmentExistsAsync(
         AccessSubject subject,
         string roleName,
+        AccessScope scope,
+        CancellationToken cancellationToken) =>
+        this.AnyAssignmentExistsAsync(subject, [roleName], scope, cancellationToken);
+
+    public async Task<bool> AnyAssignmentExistsAsync(
+        AccessSubject subject,
+        IReadOnlyCollection<string> roleNames,
         AccessScope scope,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(roleNames);
         ArgumentNullException.ThrowIfNull(scope);
 
+        string[] normalizedRoleNames = roleNames
+            .Select(AccessControlRoleName.Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (normalizedRoleNames.Length == 0)
+        {
+            return false;
+        }
+
         int subjectKind = ToPersistedKind(subject);
-        string normalizedRoleName = AccessRole.NormalizeName(roleName);
         string scopeHash = AccessScopeIndex.Create(scope.Value);
         DateTimeOffset now = clock.UtcNow;
         long nowUnixMilliseconds = now.ToUnixTimeMilliseconds();
         Guid[] localRoleIds = dbContext.Roles
             .Local
-            .Where(role => role.Name == normalizedRoleName)
+            .Where(role => normalizedRoleNames.Contains(role.Name))
             .Select(role => role.Id)
             .ToArray();
 
@@ -239,7 +256,7 @@ internal sealed class AccessControlRbacRepository(
                 (assignment.ExpiresAtUnixMilliseconds == null ||
                  assignment.ExpiresAtUnixMilliseconds > nowUnixMilliseconds) &&
                 assignment.Role != null &&
-                assignment.Role.Name == normalizedRoleName,
+                normalizedRoleNames.Contains(assignment.Role.Name),
                 cancellationToken)
             .ConfigureAwait(false);
     }

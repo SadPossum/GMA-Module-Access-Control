@@ -224,6 +224,65 @@ public sealed class AccessControlRbacRepositoryTests
     }
 
     [Fact]
+    public async Task Any_assignment_query_uses_exact_scope_and_ignores_revoked_or_expired_roles()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        AccessControlRbacRepository repository = CreateRepository(dbContext);
+        AccessSubject subject = AccessSubject.User("user-a");
+        AccessScope tenantA = AccessScope.Parse("tenant:tenant-a");
+
+        await repository.EnsureSubjectAsync(subject, Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("active-member", Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("expired-member", Now, CancellationToken.None);
+        await repository.EnsureRoleAsync("revoked-member", Now, CancellationToken.None);
+        Dictionary<string, Guid> roleIds = dbContext.Roles.Local
+            .ToDictionary(role => role.Name, role => role.Id, StringComparer.Ordinal);
+        await repository.EnsureRoleAssignmentAsync(
+            subject,
+            "active-member",
+            tenantA,
+            Now.AddHours(-2),
+            CancellationToken.None);
+        dbContext.SubjectRoleAssignments.Add(new AccessSubjectRoleAssignment(
+            Guid.Parse("10101010-1010-1010-1010-101010101010"),
+            subject,
+            roleIds["expired-member"],
+            tenantA,
+            Now.AddHours(-2),
+            Now.AddHours(-1)));
+        AccessSubjectRoleAssignment revoked = new(
+            Guid.Parse("20202020-2020-2020-2020-202020202020"),
+            subject,
+            roleIds["revoked-member"],
+            tenantA,
+            Now.AddHours(-2));
+        revoked.Revoke(Now.AddHours(-1));
+        dbContext.SubjectRoleAssignments.Add(revoked);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        bool inactiveOnly = await repository.AnyAssignmentExistsAsync(
+            subject,
+            ["expired-member", "revoked-member"],
+            tenantA,
+            CancellationToken.None);
+        bool includesActive = await repository.AnyAssignmentExistsAsync(
+            subject,
+            ["missing-member", "active-member", "revoked-member"],
+            tenantA,
+            CancellationToken.None);
+        bool otherScope = await repository.AnyAssignmentExistsAsync(
+            subject,
+            ["active-member"],
+            AccessScope.Parse("tenant:tenant-b"),
+            CancellationToken.None);
+
+        Assert.False(inactiveOnly);
+        Assert.True(includesActive);
+        Assert.False(otherScope);
+    }
+
+    [Fact]
     public async Task List_roles_returns_permissions_and_assignment_count()
     {
         await using AccessControlDbContext dbContext = CreateDbContext();

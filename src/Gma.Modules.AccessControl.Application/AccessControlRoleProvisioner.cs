@@ -93,6 +93,30 @@ internal sealed class AccessControlRoleProvisioner(
             cancellationToken);
     }
 
+    public Task<bool> HasAnyAssignmentAsync(
+        AccessSubject subject,
+        IReadOnlyCollection<string> roleNames,
+        AccessScope scope,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(subject);
+        ArgumentNullException.ThrowIfNull(roleNames);
+        ArgumentNullException.ThrowIfNull(scope);
+
+        string[] normalizedRoleNames = roleNames
+            .Select(AccessControlRoleName.Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return normalizedRoleNames.Length == 0
+            ? Task.FromResult(false)
+            : repository.AnyAssignmentExistsAsync(
+                subject,
+                normalizedRoleNames,
+                scope,
+                cancellationToken);
+    }
+
     public async Task<AccessControlPage<AccessControlRoleAssignment>> ListAssignmentsAsync(
         string roleName,
         AccessScope scope,
