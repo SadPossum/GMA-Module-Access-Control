@@ -5,7 +5,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $solution = Join-Path $repositoryRoot 'Gma.Modules.AccessControl.slnx'
+$solutionSync = @(
+    (Join-Path $repositoryRoot '..\..\framework\eng\sync-solution.ps1')
+    (Join-Path $repositoryRoot '..\gma-framework\eng\sync-solution.ps1')
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($null -eq $solutionSync) {
+    throw 'Cannot locate the GMA Framework solution synchronization script.'
+}
 
+& $solutionSync -RepositoryRoot $repositoryRoot -Solution 'Gma.Modules.AccessControl.slnx' -Check
 & (Join-Path $PSScriptRoot 'check-boundaries.ps1')
 & dotnet restore $solution
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

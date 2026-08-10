@@ -26,6 +26,7 @@
   </Folder>
   <Folder Name="/docs/">
     <File Path="docs/README.md" />
+    <File Path="docs/access-assignment-policy-and-lease-closure-task.md" />
     <File Path="docs/access-control-domain-completion-task.md" />
     <File Path="docs/access-control-production-hardening-task.md" />
     <File Path="docs/access-control-scope-lifecycle-task.md" />
