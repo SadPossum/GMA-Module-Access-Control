@@ -39,12 +39,11 @@ internal interface IAccessControlRbacRepository
         AccessSubject subject,
         string roleName,
         AccessScope scope,
-        DateTimeOffset createdAtUtc,
         DateTimeOffset? expiresAtUtc,
         IReadOnlyCollection<string> expectedRolePermissions,
         CancellationToken cancellationToken);
     Task<AccessControlRemovalOutcome> RevokeRolePermissionAsync(string roleName, string permissionCode, CancellationToken cancellationToken);
-    Task<AccessControlRemovalOutcome> UnassignRoleAsync(AccessSubject subject, string roleName, AccessScope scope, DateTimeOffset revokedAtUtc, CancellationToken cancellationToken);
+    Task<AccessControlRemovalOutcome> UnassignRoleAsync(AccessSubject subject, string roleName, AccessScope scope, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleDetails>> ListRolesAsync(CancellationToken cancellationToken);
     Task<AccessControlPage<AccessControlRoleDetails>> ListRolesPageAsync(PageRequest pageRequest, CancellationToken cancellationToken);
     Task<IReadOnlyList<AccessControlRoleAssignmentDetails>> ListRoleAssignmentsAsync(string roleName, CancellationToken cancellationToken);

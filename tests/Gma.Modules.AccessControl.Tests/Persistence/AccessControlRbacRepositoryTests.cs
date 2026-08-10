@@ -326,7 +326,6 @@ public sealed class AccessControlRbacRepositoryTests
                 user,
                 "property-reader",
                 tenantA,
-                Now,
                 CancellationToken.None));
 
         IReadOnlyList<AccessControlRoleAssignmentDetails> assignments = await repository
@@ -343,7 +342,6 @@ public sealed class AccessControlRbacRepositoryTests
                 user,
                 "property-reader",
                 tenantA,
-                Now,
                 CancellationToken.None));
     }
 
@@ -378,13 +376,11 @@ public sealed class AccessControlRbacRepositoryTests
             subject,
             "workspace-member",
             scope,
-            Now,
             CancellationToken.None);
         AccessControlRemovalOutcome missing = await repository.UnassignRoleAsync(
             subject,
             "workspace-member",
             scope,
-            Now,
             CancellationToken.None);
 
         Assert.Equal(AccessControlRemovalOutcome.Removed, removed);
@@ -423,7 +419,6 @@ public sealed class AccessControlRbacRepositoryTests
                 owner,
                 "owner",
                 AccessScope.Global,
-                Now,
                 CancellationToken.None));
         Assert.Equal(
             AccessControlRemovalOutcome.LastOwnerProtected,
@@ -454,7 +449,6 @@ public sealed class AccessControlRbacRepositoryTests
                 ownerA,
                 "owner-a",
                 AccessScope.Global,
-                Now,
                 CancellationToken.None));
         Assert.Equal(
             AccessControlRemovalOutcome.LastOwnerProtected,

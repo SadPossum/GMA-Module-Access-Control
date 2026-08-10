@@ -83,7 +83,6 @@ internal sealed class AssignRoleCommandHandler(
                 subject,
                 roleName,
                 scope,
-                now,
                 expiresAtUtc,
                 rolePermissions,
                 cancellationToken)
@@ -96,6 +95,11 @@ internal sealed class AssignRoleCommandHandler(
         if (outcome == AccessControlRoleAssignmentPersistenceOutcome.AlreadyExists)
         {
             return Result.Failure<Unit>(AccessControlApplicationErrors.AssignmentAlreadyExists);
+        }
+
+        if (outcome == AccessControlRoleAssignmentPersistenceOutcome.ExpiryElapsed)
+        {
+            return Result.Failure<Unit>(AccessControlApplicationErrors.AssignmentExpiryInvalid);
         }
 
         return Result.Success(Unit.Value);

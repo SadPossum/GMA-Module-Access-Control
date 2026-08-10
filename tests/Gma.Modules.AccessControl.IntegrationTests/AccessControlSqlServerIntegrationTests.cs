@@ -231,6 +231,21 @@ public sealed class AccessControlSqlServerIntegrationTests
                 includeInactive: true,
                 CancellationToken.None)).Items);
         Assert.Equal(AccessRoleAssignmentStatus.Expired, history.Status);
+
+        await using AccessControlDbContext elapsedContext = CreateDbContext(connectionString);
+        AccessControlRoleAssignmentPersistenceOutcome elapsed = await CreateRbacRepository(
+                elapsedContext,
+                expiresAtUtc)
+            .TryAssignRoleAsync(
+                AccessSubject.AdminActor("support-expired"),
+                roleName,
+                TenantScope,
+                expiresAtUtc,
+                expectedPermissions,
+                CancellationToken.None);
+        Assert.Equal(AccessControlRoleAssignmentPersistenceOutcome.ExpiryElapsed, elapsed);
+        Assert.False(await elapsedContext.SubjectRoleAssignments.AnyAsync(assignment =>
+            assignment.SubjectId == "support-expired"));
     }
 
     [DockerFact]
@@ -365,7 +380,6 @@ public sealed class AccessControlSqlServerIntegrationTests
             owner,
             "owner",
             AccessScope.Global,
-            Now,
             CancellationToken.None);
     }
 
@@ -459,7 +473,6 @@ public sealed class AccessControlSqlServerIntegrationTests
             subject,
             roleName,
             TenantScope,
-            Now,
             expiresAtUtc,
             expectedPermissions,
             CancellationToken.None);

@@ -273,6 +273,12 @@ internal sealed class AccessControlRbacRepository(
                 nameof(requirements));
         }
 
+        if (requirements.Count == 0)
+        {
+            return [];
+        }
+
+        long nowUnixMilliseconds = clock.UtcNow.ToUnixTimeMilliseconds();
         bool[] decisions = new bool[requirements.Count];
         IndexedAccessRequirement[] indexed = requirements
             .Select((requirement, index) => new IndexedAccessRequirement(index, requirement))
@@ -299,7 +305,8 @@ internal sealed class AccessControlRbacRepository(
                         first.Requirement.Subject.Kind,
                         subjectIds,
                         permissions,
-                        GetCandidateScopeValues(first.Requirement.Scope))
+                        GetCandidateScopeValues(first.Requirement.Scope),
+                        nowUnixMilliseconds)
                     .ToArrayAsync(cancellationToken)
                     .ConfigureAwait(false);
                 candidateGrants.AddRange(batchGrants);
@@ -335,12 +342,14 @@ internal sealed class AccessControlRbacRepository(
         ArgumentNullException.ThrowIfNull(subject);
         ArgumentNullException.ThrowIfNull(permission);
 
+        long nowUnixMilliseconds = clock.UtcNow.ToUnixTimeMilliseconds();
         AccessScopeMatchOptions permissionMatchOptions = scopeMatchOptionsResolver.Resolve(permission);
         PersistedPermissionGrant[] grants = await this.QuerySubjectPermissionGrants(
                 subject.Kind,
                 [subject.Id],
                 [permission],
-                candidateScopeValues: null)
+                candidateScopeValues: null,
+                nowUnixMilliseconds)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -590,7 +599,6 @@ internal sealed class AccessControlRbacRepository(
         AccessSubject subject,
         string roleName,
         AccessScope scope,
-        DateTimeOffset createdAtUtc,
         DateTimeOffset? expiresAtUtc,
         IReadOnlyCollection<string> expectedRolePermissions,
         CancellationToken cancellationToken)
@@ -599,6 +607,7 @@ internal sealed class AccessControlRbacRepository(
         ArgumentNullException.ThrowIfNull(scope);
         ArgumentNullException.ThrowIfNull(expectedRolePermissions);
         string normalizedRoleName = AccessRole.NormalizeName(roleName);
+        DateTimeOffset? normalizedExpiry = expiresAtUtc?.ToUniversalTime();
         string[] expectedPermissions = expectedRolePermissions
             .Select(AccessControlPermissionGrant.Normalize)
             .Distinct(StringComparer.Ordinal)
@@ -623,13 +632,21 @@ internal sealed class AccessControlRbacRepository(
                     return AccessControlRoleAssignmentPersistenceOutcome.AlreadyExists;
                 }
 
-                await this.EnsureSubjectAsync(subject, createdAtUtc, token).ConfigureAwait(false);
+                DateTimeOffset settledAtUtc = clock.UtcNow;
+                if (normalizedExpiry is not null &&
+                    normalizedExpiry.Value.ToUnixTimeMilliseconds() <=
+                    settledAtUtc.ToUnixTimeMilliseconds())
+                {
+                    return AccessControlRoleAssignmentPersistenceOutcome.ExpiryElapsed;
+                }
+
+                await this.EnsureSubjectAsync(subject, settledAtUtc, token).ConfigureAwait(false);
                 await this.AssignRoleAsync(
                         subject,
                         normalizedRoleName,
                         scope,
-                        createdAtUtc,
-                        expiresAtUtc,
+                        settledAtUtc,
+                        normalizedExpiry,
                         token)
                     .ConfigureAwait(false);
                 return AccessControlRoleAssignmentPersistenceOutcome.Assigned;
@@ -675,7 +692,6 @@ internal sealed class AccessControlRbacRepository(
         AccessSubject subject,
         string roleName,
         AccessScope scope,
-        DateTimeOffset revokedAtUtc,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(subject);
@@ -687,7 +703,6 @@ internal sealed class AccessControlRbacRepository(
                 subject,
                 normalizedRoleName,
                 scope,
-                revokedAtUtc,
                 token),
             cancellationToken);
     }
@@ -914,7 +929,8 @@ internal sealed class AccessControlRbacRepository(
         AccessSubjectKind subjectKind,
         IReadOnlyCollection<string> subjectIds,
         IReadOnlyCollection<PermissionCode> permissions,
-        string[]? candidateScopeValues)
+        string[]? candidateScopeValues,
+        long nowUnixMilliseconds)
     {
         int persistedSubjectKind = ToPersistedKind(subjectKind);
         string[] requestedPermissionCodes = permissions
@@ -925,8 +941,6 @@ internal sealed class AccessControlRbacRepository(
             .Append(AccessControlPermissionGrant.OwnerWildcard)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        long nowUnixMilliseconds = clock.UtcNow.ToUnixTimeMilliseconds();
-
         IQueryable<AccessSubjectRoleAssignment> assignments = dbContext.SubjectRoleAssignments
             .AsNoTracking()
             .Where(assignment =>
@@ -1031,12 +1045,12 @@ internal sealed class AccessControlRbacRepository(
         AccessSubject subject,
         string roleName,
         AccessScope scope,
-        DateTimeOffset revokedAtUtc,
         CancellationToken cancellationToken)
     {
         int subjectKind = ToPersistedKind(subject);
         string scopeHash = AccessScopeIndex.Create(scope.Value);
-        long nowUnixMilliseconds = clock.UtcNow.ToUnixTimeMilliseconds();
+        DateTimeOffset revokedAtUtc = clock.UtcNow;
+        long nowUnixMilliseconds = revokedAtUtc.ToUnixTimeMilliseconds();
         AccessSubjectRoleAssignment? assignment = await dbContext.SubjectRoleAssignments
             .SingleOrDefaultAsync(
                 candidate => candidate.SubjectKind == subjectKind &&

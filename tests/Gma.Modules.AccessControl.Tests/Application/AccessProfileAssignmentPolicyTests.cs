@@ -6,6 +6,7 @@ using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Domain.Aggregates;
 using Gma.Modules.AccessControl.Domain.Enums;
 using Gma.Modules.AccessControl.Domain.ValueObjects;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -39,7 +40,9 @@ public sealed class AccessProfileAssignmentPolicyTests
     [Fact]
     public async Task Assignment_policy_allows_when_no_product_policy_is_registered()
     {
-        AccessProfileAssignmentPolicy policy = new([]);
+        AccessProfileAssignmentPolicy policy = new(
+            [],
+            NullLogger<AccessProfileAssignmentPolicy>.Instance);
 
         bool allowed = await policy.IsAllowedAsync(
             CreateProfile(), Scope, PropertyScope, Actor, Subject, CancellationToken.None);
@@ -53,7 +56,9 @@ public sealed class AccessProfileAssignmentPolicyTests
         RecordingPolicy allowing = new(true);
         RecordingPolicy denying = new(false);
         RecordingPolicy unreachable = new(true);
-        AccessProfileAssignmentPolicy policy = new([allowing, denying, unreachable]);
+        AccessProfileAssignmentPolicy policy = new(
+            [allowing, denying, unreachable],
+            NullLogger<AccessProfileAssignmentPolicy>.Instance);
 
         bool allowed = await policy.IsAllowedAsync(
             CreateProfile(), Scope, PropertyScope, Actor, Subject, CancellationToken.None);
@@ -66,8 +71,38 @@ public sealed class AccessProfileAssignmentPolicyTests
         Assert.Equal(Actor, context.Actor);
         Assert.Equal(Subject, context.Subject);
         Assert.Equal(["reservations.read"], context.Permissions);
+        IList<string> permissions = Assert.IsAssignableFrom<IList<string>>(context.Permissions);
+        Assert.Throws<NotSupportedException>(() => permissions[0] = "reservations.write");
         Assert.Single(denying.Contexts);
         Assert.Empty(unreachable.Contexts);
+    }
+
+    [Fact]
+    public async Task Assignment_policy_failure_denies_and_stops_the_pipeline()
+    {
+        RecordingPolicy unreachable = new(true);
+        AccessProfileAssignmentPolicy policy = new(
+            [new ThrowingPolicy(), unreachable],
+            NullLogger<AccessProfileAssignmentPolicy>.Instance);
+
+        bool allowed = await policy.IsAllowedAsync(
+            CreateProfile(), Scope, PropertyScope, Actor, Subject, CancellationToken.None);
+
+        Assert.False(allowed);
+        Assert.Empty(unreachable.Contexts);
+    }
+
+    [Fact]
+    public async Task Assignment_policy_preserves_caller_cancellation()
+    {
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        AccessProfileAssignmentPolicy policy = new(
+            [new CancelingPolicy()],
+            NullLogger<AccessProfileAssignmentPolicy>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => policy.IsAllowedAsync(
+            CreateProfile(), Scope, PropertyScope, Actor, Subject, cancellation.Token));
     }
 
     private static AccessProfile CreateProfile()
@@ -97,5 +132,21 @@ public sealed class AccessProfileAssignmentPolicyTests
             this.Contexts.Add(context);
             return ValueTask.FromResult(allowed);
         }
+    }
+
+    private sealed class ThrowingPolicy : IAccessProfileAssignmentPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            AccessProfileAssignmentPolicyContext context,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Private product policy failure.");
+    }
+
+    private sealed class CancelingPolicy : IAccessProfileAssignmentPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            AccessProfileAssignmentPolicyContext context,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromCanceled<bool>(cancellationToken);
     }
 }

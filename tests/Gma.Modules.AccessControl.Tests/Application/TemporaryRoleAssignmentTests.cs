@@ -15,6 +15,7 @@ using Gma.Modules.AccessControl.Contracts;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -79,7 +80,7 @@ public sealed class TemporaryRoleAssignmentTests
         AccessControlRbacRepository repository = CreateRepository(dbContext, clock);
         await SeedRoleAsync(repository, dbContext, "support-reader", "properties.read");
         AssignRoleCommandHandler assign = CreateAssignHandler(repository, clock);
-        UnassignRoleCommandHandler unassign = new(repository, clock);
+        UnassignRoleCommandHandler unassign = new(repository);
         AccessSubject subject = AccessSubject.AdminActor("support-a");
 
         Assert.True((await assign.HandleAsync(
@@ -114,7 +115,10 @@ public sealed class TemporaryRoleAssignmentTests
             .Items
             .ToArray();
         Assert.Equal(2, history.Length);
-        Assert.Contains(history, assignment => assignment.Status == AccessRoleAssignmentStatus.Revoked);
+        AccessControlRoleAssignmentDetails revoked = Assert.Single(
+            history,
+            assignment => assignment.Status == AccessRoleAssignmentStatus.Revoked);
+        Assert.Equal(Now.AddMinutes(10), revoked.RevokedAtUtc);
         Assert.Contains(history, assignment => assignment.Status == AccessRoleAssignmentStatus.Active);
         Assert.Equal(2, history.Select(assignment => assignment.Id).Distinct().Count());
         Assert.True(await repository.AssignmentExistsAsync(
@@ -153,7 +157,9 @@ public sealed class TemporaryRoleAssignmentTests
         AssignRoleCommandHandler deniedHandler = new(
             repository,
             AccessControlTestAdmissions.AllowAll(),
-            new AccessRoleAssignmentPolicy([new DenyAllAssignmentsPolicy()]),
+            new AccessRoleAssignmentPolicy(
+                [new DenyAllAssignmentsPolicy()],
+                NullLogger<AccessRoleAssignmentPolicy>.Instance),
             clock);
         Result<Unit> denied = await deniedHandler.HandleAsync(
             new AssignRoleCommand(
@@ -183,7 +189,9 @@ public sealed class TemporaryRoleAssignmentTests
         AssignRoleCommandHandler handler = new(
             repository,
             AccessControlTestAdmissions.AllowAll(),
-            new AccessRoleAssignmentPolicy([policy]),
+            new AccessRoleAssignmentPolicy(
+                [policy],
+                NullLogger<AccessRoleAssignmentPolicy>.Instance),
             clock);
 
         Result<Unit> result = await handler.HandleAsync(
@@ -197,6 +205,140 @@ public sealed class TemporaryRoleAssignmentTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(["properties.read"], policy.Permissions);
+        IList<string> permissions = Assert.IsAssignableFrom<IList<string>>(policy.Permissions);
+        Assert.Throws<NotSupportedException>(() => permissions[0] = "reservations.write");
+    }
+
+    [Fact]
+    public async Task Assignment_policy_failure_returns_a_stable_rejection_without_writing()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        MutableClock clock = new(Now);
+        AccessControlRbacRepository repository = CreateRepository(dbContext, clock);
+        await SeedRoleAsync(repository, dbContext, "support-reader", "properties.read");
+        AssignRoleCommandHandler handler = new(
+            repository,
+            AccessControlTestAdmissions.AllowAll(),
+            new AccessRoleAssignmentPolicy(
+                [new ThrowingAssignmentPolicy()],
+                NullLogger<AccessRoleAssignmentPolicy>.Instance),
+            clock);
+
+        Result<Unit> result = await handler.HandleAsync(
+            new AssignRoleCommand(
+                AccessSubjectKind.AdminActor,
+                "support-a",
+                "support-reader",
+                TenantScope,
+                Now.AddHours(1)),
+            CancellationToken.None);
+
+        Assert.Equal(AccessControlApplicationErrors.AssignmentRejected, result.Error);
+        Assert.Empty(dbContext.SubjectRoleAssignments);
+    }
+
+    [Fact]
+    public async Task Assignment_policy_preserves_caller_cancellation()
+    {
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        AccessRoleAssignmentPolicy policy = new(
+            [new CancelingAssignmentPolicy()],
+            NullLogger<AccessRoleAssignmentPolicy>.Instance);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => policy.IsAllowedAsync(
+            AccessSubject.AdminActor("support-a"),
+            "support-reader",
+            TenantScope,
+            Now.AddHours(1),
+            ["properties.read"],
+            cancellation.Token));
+    }
+
+    [Fact]
+    public async Task Lease_that_expires_during_policy_evaluation_is_not_persisted()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        MutableClock clock = new(Now);
+        AccessControlRbacRepository repository = CreateRepository(dbContext, clock);
+        await SeedRoleAsync(repository, dbContext, "support-reader", "properties.read");
+        DateTimeOffset expiry = Now.AddMinutes(1);
+        AssignRoleCommandHandler handler = new(
+            repository,
+            AccessControlTestAdmissions.AllowAll(),
+            new AccessRoleAssignmentPolicy(
+                [new AdvanceClockAssignmentPolicy(clock, expiry)],
+                NullLogger<AccessRoleAssignmentPolicy>.Instance),
+            clock);
+
+        Result<Unit> result = await handler.HandleAsync(
+            new AssignRoleCommand(
+                AccessSubjectKind.AdminActor,
+                "support-a",
+                "support-reader",
+                TenantScope,
+                expiry),
+            CancellationToken.None);
+
+        Assert.Equal(AccessControlApplicationErrors.AssignmentExpiryInvalid, result.Error);
+        Assert.Empty(dbContext.SubjectRoleAssignments);
+        Assert.DoesNotContain(dbContext.Principals, principal => principal.SubjectId == "support-a");
+    }
+
+    [Fact]
+    public async Task Batch_authorization_uses_one_temporal_snapshot_across_scope_groups()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        MutableClock seedClock = new(Now);
+        AccessControlRbacRepository seed = CreateRepository(dbContext, seedClock);
+        await SeedRoleAsync(seed, dbContext, "support-reader", "properties.read");
+        AssignRoleCommandHandler assign = CreateAssignHandler(seed, seedClock);
+        AccessScope otherScope = AccessScope.Parse("tenant:tenant-b");
+        DateTimeOffset expiry = Now.AddHours(1);
+        foreach (AccessScope scope in new[] { TenantScope, otherScope })
+        {
+            Assert.True((await assign.HandleAsync(
+                new AssignRoleCommand(
+                    AccessSubjectKind.AdminActor,
+                    "support-a",
+                    "support-reader",
+                    scope,
+                    expiry),
+                CancellationToken.None)).IsSuccess);
+        }
+
+        SequenceClock authorizationClock = new(Now, expiry);
+        AccessControlRbacRepository repository = CreateRepository(dbContext, authorizationClock);
+        IReadOnlyList<bool> decisions = await repository.HasPermissionsAsync(
+            [
+                new AccessRequirement(
+                    AccessSubject.AdminActor("support-a"),
+                    PermissionCode.Create("properties.read"),
+                    TenantScope),
+                new AccessRequirement(
+                    AccessSubject.AdminActor("support-a"),
+                    PermissionCode.Create("properties.read"),
+                    otherScope)
+            ],
+            CancellationToken.None);
+
+        Assert.Equal([true, true], decisions);
+        Assert.Equal(1, authorizationClock.ReadCount);
+    }
+
+    [Fact]
+    public async Task Empty_batch_authorization_does_not_read_the_clock()
+    {
+        await using AccessControlDbContext dbContext = CreateDbContext();
+        SequenceClock clock = new();
+        AccessControlRbacRepository repository = CreateRepository(dbContext, clock);
+
+        IReadOnlyList<bool> decisions = await repository.HasPermissionsAsync(
+            [],
+            CancellationToken.None);
+
+        Assert.Empty(decisions);
+        Assert.Equal(0, clock.ReadCount);
     }
 
     [Fact]
@@ -218,7 +360,6 @@ public sealed class TemporaryRoleAssignmentTests
             AccessSubject.AdminActor("support-a"),
             "support-reader",
             TenantScope,
-            Now,
             Now.AddHours(1),
             expectedPermissions,
             CancellationToken.None);
@@ -329,7 +470,9 @@ public sealed class TemporaryRoleAssignmentTests
         new(
             repository,
             AccessControlTestAdmissions.AllowAll(),
-            new AccessRoleAssignmentPolicy([]),
+            new AccessRoleAssignmentPolicy(
+                [],
+                NullLogger<AccessRoleAssignmentPolicy>.Instance),
             clock);
 
     private static async Task SeedRoleAsync(
@@ -382,6 +525,35 @@ public sealed class TemporaryRoleAssignmentTests
         }
     }
 
+    private sealed class ThrowingAssignmentPolicy : IAccessRoleAssignmentPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            AccessRoleAssignmentPolicyContext context,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Private product policy failure.");
+    }
+
+    private sealed class CancelingAssignmentPolicy : IAccessRoleAssignmentPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            AccessRoleAssignmentPolicyContext context,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromCanceled<bool>(cancellationToken);
+    }
+
+    private sealed class AdvanceClockAssignmentPolicy(
+        MutableClock clock,
+        DateTimeOffset newTime) : IAccessRoleAssignmentPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(
+            AccessRoleAssignmentPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            clock.UtcNow = newTime;
+            return ValueTask.FromResult(true);
+        }
+    }
+
     private sealed class ExactScopeMatchOptionsResolver : IAccessScopeMatchOptionsResolver
     {
         public AccessScopeMatchOptions Resolve(PermissionCode permission) => new();
@@ -390,6 +562,22 @@ public sealed class TemporaryRoleAssignmentTests
     private sealed class MutableClock(DateTimeOffset utcNow) : ISystemClock
     {
         public DateTimeOffset UtcNow { get; set; } = utcNow;
+    }
+
+    private sealed class SequenceClock(params DateTimeOffset[] values) : ISystemClock
+    {
+        private readonly Queue<DateTimeOffset> values = new(values);
+
+        public int ReadCount { get; private set; }
+
+        public DateTimeOffset UtcNow
+        {
+            get
+            {
+                this.ReadCount++;
+                return this.values.Dequeue();
+            }
+        }
     }
 
     private sealed class SequenceIdGenerator : IIdGenerator

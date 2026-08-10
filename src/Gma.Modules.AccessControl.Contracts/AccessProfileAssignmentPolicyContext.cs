@@ -34,7 +34,7 @@ public sealed class AccessProfileAssignmentPolicyContext
         this.AssignmentScope = assignmentScope ?? ownerScope;
         this.Actor = actor;
         this.Subject = subject;
-        this.Permissions = permissions.ToArray();
+        this.Permissions = Array.AsReadOnly(permissions.ToArray());
     }
 
     public Guid ProfileId { get; }

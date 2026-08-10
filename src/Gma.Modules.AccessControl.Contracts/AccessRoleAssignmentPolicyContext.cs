@@ -19,7 +19,7 @@ public sealed class AccessRoleAssignmentPolicyContext
         this.RoleName = roleName;
         this.AccessScope = accessScope;
         this.ExpiresAtUtc = expiresAtUtc?.ToUniversalTime();
-        this.Permissions = permissions?.ToArray() ?? [];
+        this.Permissions = Array.AsReadOnly(permissions?.ToArray() ?? []);
     }
 
     public AccessSubject Subject { get; }

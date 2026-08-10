@@ -2,6 +2,7 @@
 
 Development tasks:
 
+- [Access assignment policy and lease closure](access-assignment-policy-and-lease-closure-task.md)
 - [Access-control scope lifecycle](access-control-scope-lifecycle-task.md)
 - [Access profile management contracts](access-profile-management-contracts-task.md)
 - [Access-profile mutation admission](access-profile-mutation-admission-policy-task.md)

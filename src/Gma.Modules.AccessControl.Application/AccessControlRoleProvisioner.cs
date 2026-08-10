@@ -67,7 +67,6 @@ internal sealed class AccessControlRoleProvisioner(
                 subject,
                 AccessControlRoleName.Normalize(roleName),
                 scope,
-                clock.UtcNow,
                 cancellationToken)
             .ConfigureAwait(false);
         return outcome switch

@@ -13,6 +13,7 @@ using Gma.Modules.AccessControl.Domain.ValueObjects;
 using Gma.Modules.AccessControl.Persistence;
 using Gma.Modules.AccessControl.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 [Trait("Category", "Unit")]
@@ -96,7 +97,9 @@ public sealed class AccessProfilePermissionPolicyTests
             rbac: null!,
             policy,
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([]),
+            new AccessProfileAssignmentPolicy(
+                [],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids: null!,
             clock: null!);
 
@@ -135,7 +138,9 @@ public sealed class AccessProfilePermissionPolicyTests
             rbac: null!,
             permissionPolicy,
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([new DenyingAssignmentPolicy()]),
+            new AccessProfileAssignmentPolicy(
+                [new DenyingAssignmentPolicy()],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids: null!,
             clock: null!);
 

@@ -92,7 +92,9 @@ public sealed class AccessProfileProvisioningTests
             rbac,
             CreatePermissionPolicy(new RecordingAuthorization()),
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([]),
+            new AccessProfileAssignmentPolicy(
+                [],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids,
             new FixedClock(Now.AddMinutes(1)));
 
@@ -145,7 +147,9 @@ public sealed class AccessProfileProvisioningTests
                 new FixedClock(Now)),
             CreatePermissionPolicy(new RecordingAuthorization()),
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([new DenyingAssignmentPolicy()]),
+            new AccessProfileAssignmentPolicy(
+                [new DenyingAssignmentPolicy()],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids,
             new FixedClock(Now.AddMinutes(1)));
 
@@ -182,7 +186,9 @@ public sealed class AccessProfileProvisioningTests
             rbac,
             CreatePermissionPolicy(new RecordingAuthorization()),
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([]),
+            new AccessProfileAssignmentPolicy(
+                [],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids,
             new FixedClock(Now.AddMinutes(1)));
         AccessProfileAssignmentTarget[] targets =
@@ -213,7 +219,9 @@ public sealed class AccessProfileProvisioningTests
             rbac,
             CreatePermissionPolicy(new RecordingAuthorization()),
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([]),
+            new AccessProfileAssignmentPolicy(
+                [],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids,
             new FixedClock(Now.AddMinutes(2)));
         Result<AccessProfileAssignmentReconciliationDetails> legacy = await legacyHandler.HandleAsync(
@@ -267,7 +275,9 @@ public sealed class AccessProfileProvisioningTests
                 new FixedClock(Now)),
             CreatePermissionPolicy(new RecordingAuthorization()),
             AccessControlTestAdmissions.AllowAll(),
-            new AccessProfileAssignmentPolicy([]),
+            new AccessProfileAssignmentPolicy(
+                [],
+                NullLogger<AccessProfileAssignmentPolicy>.Instance),
             ids,
             new FixedClock(Now.AddMinutes(1)));
 

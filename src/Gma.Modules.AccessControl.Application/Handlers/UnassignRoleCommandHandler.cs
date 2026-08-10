@@ -3,13 +3,10 @@ namespace Gma.Modules.AccessControl.Application.Handlers;
 using Gma.Framework.AccessControl;
 using Gma.Framework.Cqrs;
 using Gma.Framework.Results;
-using Gma.Framework.Runtime.Time;
 using Gma.Modules.AccessControl.Application.Commands;
 using Gma.Modules.AccessControl.Application.Ports;
 
-internal sealed class UnassignRoleCommandHandler(
-    IAccessControlRbacRepository repository,
-    ISystemClock clock)
+internal sealed class UnassignRoleCommandHandler(IAccessControlRbacRepository repository)
     : ICommandHandler<UnassignRoleCommand, Unit>
 {
     public async Task<Result<Unit>> HandleAsync(UnassignRoleCommand command, CancellationToken cancellationToken)
@@ -33,7 +30,6 @@ internal sealed class UnassignRoleCommandHandler(
                 subject,
                 roleName,
                 command.AccessScope ?? AccessScope.Global,
-                clock.UtcNow,
                 cancellationToken)
             .ConfigureAwait(false);
 
