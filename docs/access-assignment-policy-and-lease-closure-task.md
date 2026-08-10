@@ -1,6 +1,6 @@
 # Access Assignment Policy And Lease Closure Task
 
-Status: local verification complete; exact candidate CI pending
+Status: complete
 Date: 2026-08-10
 
 ## Goal
@@ -133,3 +133,13 @@ outside the module.
 - Docker-backed provider tests were not repeated locally. The candidate adds
   equivalent elapsed-lease assertions for both providers, to be exercised by
   exact-head relational CI.
+
+## Published Verification
+
+- exact published candidate `fa6b0062a70b85f6f33a9f125417f335cd8f1138`
+  contains functional commit `a9c9f71c55d682569d9bf23430d57a8df4a3c9ff`;
+- validate run `31372161631` passed solution synchronization, restore, build,
+  boundaries, both migration drift checks, the fast suite, package audit, and
+  both providers' Docker-backed relational tests; and
+- Security Baseline run `31372161784` passed owned-source, dependency,
+  configuration, release-policy, and code-scanning checks.

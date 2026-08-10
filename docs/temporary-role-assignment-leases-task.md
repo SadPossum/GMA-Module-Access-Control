@@ -1,6 +1,6 @@
 # Temporary Role-Assignment Leases Task
 
-Status: local verification complete; exact candidate CI pending
+Status: complete
 Date: 2026-07-28
 
 ## Goal
@@ -138,5 +138,7 @@ visibility, emergency review, and delivery of alerts.
 - provider upgrade tests backfill the bounded exact-scope hash for existing
   assignments and resolve it through hash plus canonical equality;
 - concurrent final-owner tests retain one active owner and one softly revoked
-  history row;
-- exact published-commit CI remains pending.
+  history row; and
+- exact published candidate `fa6b0062a70b85f6f33a9f125417f335cd8f1138`
+  passed validate and relational run `31372161631` plus Security Baseline run
+  `31372161784`.
