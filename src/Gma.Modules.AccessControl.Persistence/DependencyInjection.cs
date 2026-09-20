@@ -32,6 +32,9 @@ public static class DependencyInjection
         builder.Services.TryAddScoped<IAccessControlRbacRepository, AccessControlRbacRepository>();
         builder.Services.TryAddScoped<IAccessProfileRepository, AccessProfileRepository>();
         builder.Services.TryAddScoped<IAccessControlScopeLifecycle, AccessControlScopeLifecycleService>();
+        builder.Services.TryAddScoped<
+            IAccessControlSubjectAuthoritySnapshotReader,
+            AccessControlSubjectAuthoritySnapshotReader>();
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Scoped<
                 IAccessControlScopeWriteAdmissionReader,
