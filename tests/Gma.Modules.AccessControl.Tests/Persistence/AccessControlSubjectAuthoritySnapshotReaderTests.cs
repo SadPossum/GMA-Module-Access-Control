@@ -15,6 +15,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
+using ContractProfileStatus = Gma.Modules.AccessControl.Contracts.AccessProfileStatus;
 
 [Trait("Category", "Unit")]
 public sealed class AccessControlSubjectAuthoritySnapshotReaderTests
@@ -351,6 +352,51 @@ public sealed class AccessControlSubjectAuthoritySnapshotReaderTests
         Assert.IsType<AccessControlSubjectAuthoritySnapshotReader>(reader);
         Assert.Same(reader, first.ServiceProvider.GetRequiredService<IAccessControlSubjectAuthoritySnapshotReader>());
         Assert.NotSame(reader, second.ServiceProvider.GetRequiredService<IAccessControlSubjectAuthoritySnapshotReader>());
+    }
+
+    [Theory]
+    [InlineData(1, ContractProfileStatus.Active)]
+    [InlineData(2, ContractProfileStatus.Archived)]
+    public async Task Snapshot_maps_supported_stored_profile_states(int storedStatus, ContractProfileStatus expected)
+    {
+        await using SqliteConnection connection = await OpenConnectionAsync();
+        await using AccessControlDbContext context = await CreateContextAsync(connection);
+        AccessSubject subject = AccessSubject.User("profile-state-reader");
+        await SeedAuthorityAsync(context, subject);
+        await context.Database.ExecuteSqlInterpolatedAsync($"UPDATE access_profiles SET Status = {storedStatus}");
+        context.ChangeTracker.Clear();
+        AccessControlSubjectAuthoritySnapshotReader reader = new(context, new FixedTimeProvider(Now));
+
+        AccessControlSubjectAuthoritySnapshot snapshot = await reader.ReadAsync(
+            new(subject.Kind, subject.Id, PropertyScope, [PropertyScope]));
+
+        Assert.Equal(AccessControlAuthoritySnapshotStatus.Stable, snapshot.Status);
+        Assert.Equal(expected, Assert.Single(snapshot.ProfileGrants).ProfileStatus);
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(999)]
+    public async Task Snapshot_rejects_unknown_or_corrupt_stored_profile_states(int storedStatus)
+    {
+        await using SqliteConnection connection = await OpenConnectionAsync();
+        await using AccessControlDbContext context = await CreateContextAsync(connection);
+        AccessSubject subject = AccessSubject.User("corrupt-profile-reader");
+        await SeedAuthorityAsync(context, subject);
+        await context.Database.ExecuteSqlInterpolatedAsync($"UPDATE access_profiles SET Status = {storedStatus}");
+        context.ChangeTracker.Clear();
+        AccessControlSubjectAuthoritySnapshotReader reader = new(context, new FixedTimeProvider(Now));
+
+        AccessControlSubjectAuthoritySnapshot snapshot = await reader.ReadAsync(
+            new(subject.Kind, subject.Id, PropertyScope, [PropertyScope]));
+
+        Assert.Equal(AccessControlAuthoritySnapshotStatus.Invalid, snapshot.Status);
+        Assert.Empty(snapshot.ProfileGrants);
+        Assert.Empty(snapshot.RoleGrants);
+        Assert.Null(snapshot.FactsSha256);
+        Assert.Empty(context.ChangeTracker.Entries());
     }
 
     private static async Task SeedAuthorityAsync(
