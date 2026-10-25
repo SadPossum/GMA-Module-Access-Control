@@ -139,12 +139,32 @@ public sealed class AccessControlContractEnumJsonTests
         AssertWireValue(stage, wireName);
 
     [Theory]
+    [InlineData(AccessControlAuthoritySnapshotStatus.Stable, "stable")]
+    [InlineData(AccessControlAuthoritySnapshotStatus.Stale, "stale")]
+    [InlineData(AccessControlAuthoritySnapshotStatus.Closed, "closed")]
+    [InlineData(AccessControlAuthoritySnapshotStatus.Invalid, "invalid")]
+    [InlineData(AccessControlAuthoritySnapshotStatus.Unavailable, "unavailable")]
+    public void Authority_snapshot_status_uses_stable_wire_names(
+        AccessControlAuthoritySnapshotStatus status,
+        string wireName) =>
+        AssertWireValue(status, wireName);
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("null")]
+    [InlineData("\"Stable\"")]
+    [InlineData("\" stable \"")]
+    public void Authority_snapshot_status_rejects_noncanonical_json(string json) =>
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlAuthoritySnapshotStatus>(json, JsonOptions));
+
+    [Theory]
     [InlineData("1")]
     [InlineData("\"unknown\"")]
     [InlineData("\"future\"")]
     public void Contract_enums_reject_numeric_unknown_and_future_values(string json)
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessProfileStatus>(json, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlAuthoritySnapshotStatus>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessProfileChangeKind>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessControlAssignmentRemovalOutcome>(json, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AccessRoleAssignmentLifecycleStage>(json, JsonOptions));
@@ -164,6 +184,7 @@ public sealed class AccessControlContractEnumJsonTests
     public void Contract_enums_reject_unknown_writes()
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(AccessProfileStatus.Unknown, JsonOptions));
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(AccessControlAuthoritySnapshotStatus.Unknown, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(AccessProfileChangeKind.Unknown, JsonOptions));
         Assert.Throws<JsonException>(() => JsonSerializer.Serialize(
             AccessControlAssignmentRemovalOutcome.Unknown,

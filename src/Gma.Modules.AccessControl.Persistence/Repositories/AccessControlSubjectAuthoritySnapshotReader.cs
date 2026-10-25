@@ -412,9 +412,7 @@ internal sealed class AccessControlSubjectAuthoritySnapshotReader(
                 !AccessScope.TryParse(
                     profile.OwnerScopeValue,
                     out AccessScope? ownerScope) ||
-                !Enum.IsDefined(
-                    typeof(AccessProfileStatus),
-                    profile.Status))
+                !TryMapProfileStatus(profile.Status, out AccessProfileStatus profileStatus))
             {
                 grants = [];
                 return false;
@@ -426,7 +424,7 @@ internal sealed class AccessControlSubjectAuthoritySnapshotReader(
                 profile.Id,
                 ownerScope,
                 profile.Key,
-                (AccessProfileStatus)profile.Status,
+                profileStatus,
                 profile.Version,
                 permissions
                     .Where(permission => permission.ProfileId == profile.Id)
@@ -443,6 +441,17 @@ internal sealed class AccessControlSubjectAuthoritySnapshotReader(
             .ThenBy(grant => grant.AssignmentId)
             .ToArray();
         return true;
+    }
+
+    private static bool TryMapProfileStatus(int value, out AccessProfileStatus status)
+    {
+        status = value switch
+        {
+            (int)AccessProfileStatus.Active => AccessProfileStatus.Active,
+            (int)AccessProfileStatus.Archived => AccessProfileStatus.Archived,
+            _ => AccessProfileStatus.Unknown
+        };
+        return status is not AccessProfileStatus.Unknown;
     }
 
     private static bool IsRelated(AccessScope candidate, AccessScope root) =>
